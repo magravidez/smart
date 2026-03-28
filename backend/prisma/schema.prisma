@@ -1,0 +1,22 @@
+// This is the Prisma schema for the SMART project.
+// SMART: Sunlight-based Monitoring for Agriculture with Real-time Temperature and Humidity
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  // Connection URLs are configured in prisma.config.ts via the NeonDB adapter.
+  provider = "postgresql"
+}
+
+model SMART {
+  id          Int      @id @default(autoincrement())
+  node_id     String
+  location    String
+  temperature Float
+  humidity    Float
+  timestamp   DateTime
+
+  @@map("smart")
+}
