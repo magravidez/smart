@@ -10,9 +10,9 @@ SMART is an Industrial IoT network for smart agriculture that uses edge computin
 
 | Category        | Technologies                                                                                                                                                                                                                                                |
 | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Node | |
-| Frontend        | |
-| UI              | |
+| Node            | ![Arduino UNO R4 WiFi](https://img.shields.io/badge/Arduino_UNO_R4_WiFi-00979D?style=flat&logo=arduino) DHT11 + LDR (Photoresistor) |
+| Frontend        | ![React](https://img.shields.io/badge/React-61DAFB?style=flat&logo=react) ![Vite](https://img.shields.io/badge/Vite-646CFF?style=flat&logo=vite) |
+| UI              | SmartDashboard.jsx — warm-beige earthy theme, 5-second polling, live node cards |
 | Backend         | ![Node.js](https://img.shields.io/badge/Node.js-339933?style=flat&logo=node.js) ![Express](https://img.shields.io/badge/Express.js-000000?style=flat&logo=express) ![TypeScript](https://img.shields.io/badge/TypeScript-3178c6?style=flat&logo=typescript) |
 | Database        | ![NeonDB](https://img.shields.io/badge/NeonDB-database-blue)                                                                                                                                                                                                |
 | ORM             | ![Prisma](https://img.shields.io/badge/Prisma-3b82f6?style=flat&logo=prisma)                                                                                                                                                                                |
