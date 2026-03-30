@@ -5,7 +5,7 @@ const router = Router()
 
 // POST /api/readings
 // Receives a new reading from an Arduino sensor node and stores it.
-// Expected JSON body: { node_id, location, temperature, humidity, timestamp }
+// Expected JSON body: { node_id, location, temperature, humidity, timestamp? }
 router.post("/", async (req: Request, res: Response) => {
   const { node_id, location, temperature, humidity, timestamp } = req.body
 
@@ -13,12 +13,11 @@ router.post("/", async (req: Request, res: Response) => {
     node_id === undefined ||
     location === undefined ||
     temperature === undefined ||
-    humidity === undefined ||
-    timestamp === undefined
+    humidity === undefined
   ) {
     res.status(400).json({
       error:
-        "All fields are required: node_id, location, temperature, humidity, timestamp.",
+        "All fields are required: node_id, location, temperature, humidity.",
     })
     return
   }
@@ -33,12 +32,16 @@ router.post("/", async (req: Request, res: Response) => {
     return
   }
 
-  const parsedTimestamp = new Date(timestamp)
-  if (isNaN(parsedTimestamp.getTime())) {
-    res.status(400).json({
-      error: "Timestamp must be a valid ISO 8601 date string.",
-    })
-    return
+  // Arduino nodes may not have a real-time clock; use server time if timestamp is absent.
+  let parsedTimestamp = new Date()
+  if (timestamp !== undefined) {
+    parsedTimestamp = new Date(timestamp)
+    if (isNaN(parsedTimestamp.getTime())) {
+      res.status(400).json({
+        error: "Timestamp must be a valid ISO 8601 date string.",
+      })
+      return
+    }
   }
 
   try {
