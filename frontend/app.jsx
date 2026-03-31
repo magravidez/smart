@@ -1,4 +1,13 @@
 import { useState, useEffect, useCallback } from "react";
+import {
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  CartesianGrid,
+  XAxis,
+  YAxis,
+  Tooltip,
+} from "recharts";
 
 // ─── THEME ──────────────────────────────────────────────────────────────────
 const C = {
@@ -49,6 +58,25 @@ function fmtTimeShort(ts) {
   });
 }
 
+function fmtBucket(ts, mode) {
+  if (!ts) return "—";
+  const d = new Date(ts);
+  if (mode === "hour") {
+    return d.toLocaleString("en-PH", {
+      month: "short",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+  }
+
+  return d.toLocaleDateString("en-PH", {
+    month: "short",
+    day: "2-digit",
+  });
+}
+
 function getLatestPerNode(readings) {
   const map = {};
   readings.forEach(r => {
@@ -80,6 +108,15 @@ const Icon = {
       <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/>
       <rect x="9" y="3" width="6" height="4" rx="1"/><line x1="9" y1="12" x2="15" y2="12"/>
       <line x1="9" y1="16" x2="13" y2="16"/>
+    </svg>
+  ),
+  analytics: (
+    <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8">
+      <polyline points="3 17 9 11 13 15 21 7" />
+      <circle cx="3" cy="17" r="1.5" />
+      <circle cx="9" cy="11" r="1.5" />
+      <circle cx="13" cy="15" r="1.5" />
+      <circle cx="21" cy="7" r="1.5" />
     </svg>
   ),
   temp: (
@@ -255,6 +292,7 @@ function Sidebar({ activePage, setActivePage, isOnline, lastUpdated }) {
     { id: "dashboard", label: "Dashboard",  icon: Icon.dashboard },
     { id: "nodes",     label: "Node Overview", icon: Icon.nodes },
     { id: "readings",  label: "All Readings",  icon: Icon.readings },
+    { id: "analytics", label: "Analytics", icon: Icon.analytics },
   ];
 
   return (
@@ -343,6 +381,156 @@ function Sidebar({ activePage, setActivePage, isOnline, lastUpdated }) {
         </div>
       </div>
     </aside>
+  );
+}
+
+function TrendCard({ title, color, series, keyName, bucketMode, unit }) {
+  return (
+    <div style={{
+      background: "#fff9f2",
+      border: `1px solid ${C.border}`,
+      borderRadius: 16,
+      padding: "16px 16px 10px",
+      boxShadow: "0 1px 6px rgba(45,36,22,.06)",
+      minHeight: 300,
+    }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+        <div style={{ fontFamily: FONT_MONO, fontSize: 10, letterSpacing: 1.4, textTransform: "uppercase", color: C.textLt }}>
+          {title}
+        </div>
+        <div style={{ fontFamily: FONT_MONO, fontSize: 10, color }}>
+          {series.length} buckets
+        </div>
+      </div>
+      <div style={{ width: "100%", height: 250 }}>
+        <ResponsiveContainer>
+          <LineChart data={series} margin={{ top: 14, right: 10, left: 0, bottom: 8 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
+            <XAxis
+              dataKey="bucketStart"
+              tickFormatter={(v) => fmtBucket(v, bucketMode)}
+              minTickGap={24}
+              tick={{ fontSize: 10, fill: C.textLt, fontFamily: FONT_MONO }}
+              stroke={C.border}
+            />
+            <YAxis
+              tick={{ fontSize: 10, fill: C.textLt, fontFamily: FONT_MONO }}
+              stroke={C.border}
+            />
+            <Tooltip
+              formatter={(value) => [`${fmt(value, 2)} ${unit}`, title]}
+              labelFormatter={(label) => fmtBucket(label, bucketMode)}
+              contentStyle={{
+                background: "#fff9f2",
+                border: `1px solid ${C.border}`,
+                borderRadius: 8,
+                fontFamily: FONT_MONO,
+                fontSize: 11,
+              }}
+            />
+            <Line
+              type="monotone"
+              dataKey={keyName}
+              stroke={color}
+              strokeWidth={2.5}
+              dot={false}
+              activeDot={{ r: 4 }}
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
+function AnalyticsPage({
+  analytics,
+  analyticsLoading,
+  analyticsError,
+  analyticsDays,
+  setAnalyticsDays,
+  onRefresh,
+}) {
+  if (analyticsLoading && !analytics) return <Loader text="Loading analytics..." />;
+
+  return (
+    <div className="fade-in">
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 24, gap: 16, flexWrap: "wrap" }}>
+        <div>
+          <h1 style={{ fontFamily: FONT_DISPLAY, fontSize: 30, fontWeight: 700, color: C.brown }}>Analytics</h1>
+          <p style={{ color: C.textMd, fontSize: 14, marginTop: 4 }}>Temperature and humidity trends with summary stats</p>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <select value={analyticsDays} onChange={(e) => setAnalyticsDays(+e.target.value)} style={{
+            fontFamily: FONT_MONO, fontSize: 12,
+            background: "#fff9f2", color: C.brown,
+            border: `1px solid ${C.border}`, borderRadius: 8,
+            padding: "8px 14px", cursor: "pointer", outline: "none",
+          }}>
+            <option value={1}>Last 24 Hours</option>
+            <option value={7}>Last 7 Days</option>
+            <option value={30}>Last 30 Days</option>
+          </select>
+          <button onClick={onRefresh} style={{
+            display: "flex", alignItems: "center", gap: 6,
+            fontFamily: FONT_MONO, fontSize: 11, color: C.brownMd,
+            background: C.bg2, border: `1px solid ${C.border}`,
+            borderRadius: 8, padding: "7px 12px", cursor: "pointer",
+          }}>
+            {Icon.refresh} Refresh
+          </button>
+        </div>
+      </div>
+
+      {analyticsError && (
+        <div style={{
+          marginBottom: 16,
+          fontFamily: FONT_MONO,
+          fontSize: 11,
+          color: C.clay,
+          background: "#fae8e8",
+          border: "1px solid #f0c0c0",
+          borderRadius: 8,
+          padding: "8px 10px",
+          width: "fit-content",
+        }}>
+          Could not load analytics data.
+        </div>
+      )}
+
+      {!analytics || analytics.summary.samples === 0 ? (
+        <Empty text="No analytics data in this time range." />
+      ) : (
+        <>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(5,minmax(0,1fr))", gap: 14, marginBottom: 24 }}>
+            <StatCard label="Avg Temp" value={`${fmt(analytics.summary.temperature.avg)}°C`} sub="selected range" accent={C.amber} icon={Icon.temp} />
+            <StatCard label="Min Temp" value={`${fmt(analytics.summary.temperature.min)}°C`} sub="selected range" accent={C.brownMd} icon={Icon.temp} />
+            <StatCard label="Max Temp" value={`${fmt(analytics.summary.temperature.max)}°C`} sub="selected range" accent={C.clay} icon={Icon.temp} />
+            <StatCard label="Avg Humidity" value={`${fmt(analytics.summary.humidity.avg)}%`} sub="selected range" accent={C.sky} icon={Icon.humidity} />
+            <StatCard label="Samples" value={analytics.summary.samples} sub={`${analytics.range.bucket} buckets`} accent={C.sage} icon={Icon.readings} />
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(300px,1fr))", gap: 16 }}>
+            <TrendCard
+              title="Temperature Trend"
+              color={C.amber}
+              series={analytics.series}
+              keyName="temperatureAvg"
+              bucketMode={analytics.range.bucket}
+              unit="°C"
+            />
+            <TrendCard
+              title="Humidity Trend"
+              color={C.sky}
+              series={analytics.series}
+              keyName="humidityAvg"
+              bucketMode={analytics.range.bucket}
+              unit="%"
+            />
+          </div>
+        </>
+      )}
+    </div>
   );
 }
 
@@ -526,6 +714,10 @@ function Empty({ text }) {
 export default function App() {
   const [page, setPage]         = useState("dashboard");
   const [readings, setReadings] = useState(null);
+  const [analytics, setAnalytics] = useState(null);
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const [analyticsError, setAnalyticsError] = useState(false);
+  const [analyticsDays, setAnalyticsDays] = useState(7);
   const [isOnline, setIsOnline] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(null);
   const [error, setError]       = useState(false);
@@ -546,11 +738,36 @@ export default function App() {
     }
   }, [limit]);
 
+  const fetchAnalytics = useCallback(async () => {
+    setAnalyticsLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/readings/analytics?days=${analyticsDays}`);
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      setAnalytics(data);
+      setAnalyticsError(false);
+      setIsOnline(true);
+      setLastUpdated(new Date().toLocaleTimeString("en-PH", { hour12: false }));
+    } catch {
+      setAnalyticsError(true);
+      setIsOnline(false);
+    } finally {
+      setAnalyticsLoading(false);
+    }
+  }, [analyticsDays]);
+
   useEffect(() => {
     fetchReadings();
     const id = setInterval(fetchReadings, 5000);
     return () => clearInterval(id);
   }, [fetchReadings]);
+
+  useEffect(() => {
+    if (page !== "analytics") return;
+    fetchAnalytics();
+    const id = setInterval(fetchAnalytics, 30000);
+    return () => clearInterval(id);
+  }, [page, fetchAnalytics]);
 
   return (
     <>
@@ -568,7 +785,13 @@ export default function App() {
             display: "flex", alignItems: "center", justifyContent: "space-between",
           }}>
             <div style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.textLt, letterSpacing: .5 }}>
-              {page === "dashboard" ? "// overview" : page === "nodes" ? "// node status" : "// readings log"}
+              {page === "dashboard"
+                ? "// overview"
+                : page === "nodes"
+                ? "// node status"
+                : page === "readings"
+                ? "// readings log"
+                : "// analytics"}
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               {error && (
@@ -576,7 +799,7 @@ export default function App() {
                   ⚠ Cannot reach backend
                 </span>
               )}
-              <button onClick={fetchReadings} style={{
+              <button onClick={page === "analytics" ? fetchAnalytics : fetchReadings} style={{
                 display: "flex", alignItems: "center", gap: 6,
                 fontFamily: FONT_MONO, fontSize: 11, color: C.brownMd,
                 background: C.bg2, border: `1px solid ${C.border}`,
@@ -596,6 +819,16 @@ export default function App() {
             {page === "dashboard" && <DashboardPage readings={readings} />}
             {page === "nodes"     && <NodesPage readings={readings} />}
             {page === "readings"  && <ReadingsPage readings={readings} limit={limit} setLimit={setLimit} />}
+            {page === "analytics" && (
+              <AnalyticsPage
+                analytics={analytics}
+                analyticsLoading={analyticsLoading}
+                analyticsError={analyticsError}
+                analyticsDays={analyticsDays}
+                setAnalyticsDays={setAnalyticsDays}
+                onRefresh={fetchAnalytics}
+              />
+            )}
           </div>
         </div>
       </div>
