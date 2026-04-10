@@ -2,7 +2,14 @@
 
 **Sunlight-based Monitoring for Agriculture with Real-time Temperature and Humidity**
 
-SMART is an Industrial IoT network for smart agriculture that uses edge computing to optimize data transmission. Multiple Arduino sensor nodes in a star topology monitor temperature, humidity, and sunlight levels. Each node only transmits crop data to the central farm server when sunlight is detected (daytime), reducing unnecessary cloud bandwidth and database storage.
+SMART is an Industrial IoT network for smart agriculture that uses edge computing to optimize data transmission. Multiple Arduino sensor nodes in a star topology monitor temperature, humidity, and sunlight levels. Each node only transmits crop data when sunlight is detected (daytime), reducing unnecessary cloud bandwidth and database storage.
+
+The current implementation uses MQTT Pub/Sub with Adafruit IO:
+
+- Arduino nodes publish sensor data to feed `smart_reading`.
+- Backend subscribes to the feed, validates payloads, and stores to NeonDB via Prisma.
+- Frontend fetches persisted data from `GET /api/readings`.
+- IoT MQTT Panel can subscribe to the same feed for live phone monitoring.
 
 ---
 
@@ -74,6 +81,13 @@ Start the backend server:
 
 ```bash
 npm run dev
+```
+
+Create backend environment variables:
+
+```bash
+cp .env.example .env
+# Edit .env and set AIO_USERNAME + AIO_KEY
 ```
 
 The API will be available at `http://localhost:3000`.

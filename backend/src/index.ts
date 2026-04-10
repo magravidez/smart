@@ -2,6 +2,7 @@ import "dotenv/config"
 import express from "express"
 import cors from "cors"
 import readingsRouter from "./routes/readings"
+import { startMqttSubscriber } from "./mqttSubscriber"
 
 const app = express()
 const PORT = process.env.PORT ?? 3000
@@ -57,6 +58,8 @@ app.use("/api/readings", readingsRouter)
 app.use((_req, res) => {
   res.status(404).json({ error: "Route not found." })
 })
+
+startMqttSubscriber()
 
 app.listen(PORT, () => {
   console.log(`SMART running on http://localhost:${PORT}`)
