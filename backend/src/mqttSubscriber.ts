@@ -2,8 +2,11 @@ import mqtt, { MqttClient } from "mqtt"
 import { prisma } from "./lib/prisma"
 
 const MQTT_HOST = process.env.MQTT_HOST ?? "io.adafruit.com"
-const MQTT_PORT = Number(process.env.MQTT_PORT ?? "1883")
-const MQTT_PROTOCOL = process.env.MQTT_PROTOCOL ?? "mqtt"
+const MQTT_PORT = Number(process.env.MQTT_PORT ?? "443")
+const MQTT_PROTOCOL = process.env.MQTT_PROTOCOL ?? "wss"
+const MQTT_PATH = process.env.MQTT_PATH ?? "/mqtt"
+const MQTT_CLIENT_ID =
+  process.env.MQTT_CLIENT_ID ?? `smart-backend-${Math.random().toString(16).slice(2, 10)}`
 const AIO_USERNAME = process.env.AIO_USERNAME
 const AIO_KEY = process.env.AIO_KEY
 const AIO_FEED_READING = process.env.AIO_FEED_READING ?? "smart_reading"
@@ -67,20 +70,30 @@ export function startMqttSubscriber(): MqttClient | null {
   }
 
   const topic = `${AIO_USERNAME}/feeds/${AIO_FEED_READING}`
-  const brokerUrl = `${MQTT_PROTOCOL}://${MQTT_HOST}:${MQTT_PORT}`
+  const isWebSocketProtocol = MQTT_PROTOCOL === "ws" || MQTT_PROTOCOL === "wss"
+  const normalizedPath = MQTT_PATH.startsWith("/") ? MQTT_PATH : `/${MQTT_PATH}`
+  const brokerUrl = isWebSocketProtocol
+    ? `${MQTT_PROTOCOL}://${MQTT_HOST}:${MQTT_PORT}${normalizedPath}`
+    : `${MQTT_PROTOCOL}://${MQTT_HOST}:${MQTT_PORT}`
+
+  const wsPathOption = isWebSocketProtocol ? { path: normalizedPath } : {}
 
   const client = mqtt.connect(brokerUrl, {
+    clientId: MQTT_CLIENT_ID,
     username: AIO_USERNAME,
     password: AIO_KEY,
+    protocolVersion: 4,
+    clean: true,
     reconnectPeriod: 5000,
     connectTimeout: 30_000,
     keepalive: 60,
+    ...wsPathOption,
   })
 
   subscriberStarted = true
 
   client.on("connect", () => {
-    console.log(`[MQTT] Connected to ${brokerUrl}`)
+    console.log(`[MQTT] Connected to ${brokerUrl} as ${MQTT_CLIENT_ID}`)
     client.subscribe(topic, (error) => {
       if (error) {
         console.error(`[MQTT] Failed to subscribe to ${topic}:`, error.message)
