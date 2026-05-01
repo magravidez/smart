@@ -1163,47 +1163,65 @@ export default function App() {
       if (value == null) return;
 
       const metricKey = meta.metric.includes("temp") ? "temperature" : "humidity";
-      const timestamp = new Date().toISOString();
+      const nowMs = Date.now();
 
       const prevMap = nodeMapRef.current;
       const prevNode = prevMap[meta.nodeId] || { node_id: meta.nodeId, location: meta.location };
-      const nextNode = {
+      const nextNodeBase = {
         ...prevNode,
         node_id: meta.nodeId,
         location: meta.location || prevNode.location,
         [metricKey]: value,
-        timestamp,
+        lastTempText: metricKey === "temperature" ? text : prevNode.lastTempText,
+        lastHumText: metricKey === "humidity" ? text : prevNode.lastHumText,
+        lastTempAt: metricKey === "temperature" ? nowMs : prevNode.lastTempAt,
+        lastHumAt: metricKey === "humidity" ? nowMs : prevNode.lastHumAt,
       };
-      nodeMapRef.current = { ...prevMap, [meta.nodeId]: nextNode };
+      const lastEmitAt = prevNode.lastEmitAt ?? 0;
+      const hasTemp = nextNodeBase.temperature != null;
+      const hasHum = nextNodeBase.humidity != null;
+      const tempFresh = nextNodeBase.lastTempAt && nextNodeBase.lastTempAt > lastEmitAt;
+      const humFresh = nextNodeBase.lastHumAt && nextNodeBase.lastHumAt > lastEmitAt;
+      const shouldEmit = hasTemp && hasHum && tempFresh && humFresh;
 
-      setReadings((prevReadings) => {
-        const nextReading = {
-          id: Date.now(),
-          node_id: nextNode.node_id,
-          location: nextNode.location || "Unknown",
-          temperature: nextNode.temperature ?? null,
-          humidity: nextNode.humidity ?? null,
-          timestamp: nextNode.timestamp,
-        };
-        const updated = [nextReading, ...prevReadings];
-        return updated.slice(0, Math.max(100, limit));
-      });
+      if (shouldEmit) {
+        const emitAt = Math.max(nextNodeBase.lastTempAt, nextNodeBase.lastHumAt);
+        const timestamp = new Date(emitAt).toISOString();
+        const nextNode = { ...nextNodeBase, lastEmitAt: emitAt, timestamp };
+        nodeMapRef.current = { ...prevMap, [meta.nodeId]: nextNode };
 
-      setSubscriberMessages((prev) => {
-        const parsed = {
-          node_id: meta.nodeId,
-          temperature: metricKey === "temperature" ? value : undefined,
-          humidity: metricKey === "humidity" ? value : undefined,
-        };
-        const next = [{
-          id: `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
-          time: new Date().toLocaleTimeString("en-PH", { hour12: false }),
-          feed,
-          text,
-          parsed,
-        }, ...prev];
-        return next.slice(0, 50);
-      });
+        setReadings((prevReadings) => {
+          const nextReading = {
+            id: emitAt,
+            node_id: nextNode.node_id,
+            location: nextNode.location || "Unknown",
+            temperature: nextNode.temperature ?? null,
+            humidity: nextNode.humidity ?? null,
+            timestamp: nextNode.timestamp,
+          };
+          const updated = [nextReading, ...prevReadings];
+          return updated.slice(0, Math.max(100, limit));
+        });
+
+        const combinedText = [nextNode.lastTempText, nextNode.lastHumText].filter(Boolean).join(" | ");
+        setSubscriberMessages((prev) => {
+          const parsed = {
+            node_id: nextNode.node_id,
+            temperature: nextNode.temperature,
+            humidity: nextNode.humidity,
+          };
+          const next = [{
+            id: `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+            time: new Date().toLocaleTimeString("en-PH", { hour12: false }),
+            feed,
+            text: combinedText || text,
+            parsed,
+          }, ...prev];
+          return next.slice(0, 50);
+        });
+      } else {
+        nodeMapRef.current = { ...prevMap, [meta.nodeId]: nextNodeBase };
+      }
 
       setLastUpdated(new Date().toLocaleTimeString("en-PH", { hour12: false }));
     });
