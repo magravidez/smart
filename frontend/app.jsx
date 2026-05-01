@@ -996,10 +996,12 @@ function SubscriberPage({
           background: "#fff9f2",
           border: `1px solid ${C.border}`,
           borderRadius: 16,
-          padding: "16px 18px",
+          padding: "12px 14px",
           boxShadow: "0 1px 6px rgba(45,36,22,.06)",
           display: "grid",
-          gap: 10,
+          gap: 8,
+          alignSelf: "start",
+          width: "max-content",
         }}>
           <div style={{ fontFamily: FONT_MONO, fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: C.textLt }}>
             Connection Status
@@ -1016,17 +1018,31 @@ function SubscriberPage({
               {status.toUpperCase()}
             </span>
           </div>
-          <div style={{ display: "grid", gap: 6, fontFamily: FONT_MONO, fontSize: 11, color: C.textLt }}>
-            <div>Broker: {AIO_HOST}</div>
-            <div>Messages: {messages.length}</div>
-            <div>Last: {messages[0]?.time ?? "—"}</div>
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: "auto 1fr",
+            columnGap: 10,
+            rowGap: 4,
+            fontFamily: FONT_MONO,
+            fontSize: 11,
+            color: C.textLt,
+            alignItems: "center",
+          }}>
+            <div style={{ opacity: 0.8 }}>Broker</div>
+            <div style={{ color: C.textMd, wordBreak: "break-all" }}>{AIO_HOST}</div>
+
+            <div style={{ opacity: 0.8 }}>Messages</div>
+            <div style={{ color: C.textMd }}>{messages.length}</div>
+
+            <div style={{ opacity: 0.8 }}>Last</div>
+            <div style={{ color: C.textMd }}>{messages[0]?.time ?? "—"}</div>
           </div>
           <div style={{
-            marginTop: 8,
+            marginTop: 6,
             fontFamily: FONT_BODY,
             fontSize: 13,
             color: C.textMd,
-            lineHeight: 1.6,
+            lineHeight: 1.5,
           }}>
             This subscriber uses MQTT over WebSockets to connect directly to Adafruit IO.
           </div>
