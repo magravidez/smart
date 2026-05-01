@@ -36,14 +36,22 @@ const FONT_MONO    = "'JetBrains Mono', 'Courier New', monospace";
 const FONT_BODY    = "'DM Sans', sans-serif";
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
-const API_BASE = import.meta.env.VITE_API_BASE || `http://${window.location.hostname}:3000`;
 const AIO_DEFAULT = {
   username: import.meta.env.VITE_AIO_USERNAME || "",
   key: import.meta.env.VITE_AIO_KEY || "",
-  feed: import.meta.env.VITE_AIO_FEED || "smart_reading",
 };
 const AIO_HOST = "wss://io.adafruit.com:443/mqtt";
 const SUBSCRIBER_CONFIG_KEY = "smart_subscriber_config";
+const FEED_KEYS = [
+  "node-1-rhundei-city-humidity",
+  "node-1-rhundei-city-temp",
+  "node-2-mariel-city-humidity",
+  "node-2-mariel-city-temp",
+  "node-3-christian-city-humidity",
+  "node-3-christian-city-temp",
+  "node-4-nichole-city-humidity",
+  "node-4-nichole-city-temp",
+];
 
 function fmt(n, d = 1) {
   return n != null ? (+n).toFixed(d) : "—";
@@ -104,6 +112,103 @@ function safeParsePayload(payload) {
   } catch {
     return { text, parsed: null };
   }
+}
+
+function parseAioValue(payload) {
+  const { text, parsed } = safeParsePayload(payload);
+  if (typeof parsed === "number") return { value: parsed, text };
+  if (parsed && typeof parsed === "object" && parsed.value != null) {
+    const value = Number(parsed.value);
+    return { value: Number.isFinite(value) ? value : null, text };
+  }
+  const value = Number.parseFloat(text);
+  return { value: Number.isFinite(value) ? value : null, text };
+}
+
+function toTitleCase(input) {
+  return input
+    .split(" ")
+    .filter(Boolean)
+    .map((word) => word[0]?.toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+function parseFeedKey(feedKey) {
+  const parts = feedKey.split("-");
+  const metric = parts[parts.length - 1];
+  const nodeIndex = parts.findIndex((p) => p === "node");
+  const nodeNumber = parts[nodeIndex + 1] || "?";
+  const locationParts = parts.slice(nodeIndex + 2, -1);
+  return {
+    nodeId: `NODE_${nodeNumber}`,
+    location: toTitleCase(locationParts.join(" ")),
+    metric,
+  };
+}
+
+function buildAnalytics(readings, days) {
+  const now = Date.now();
+  const windowMs = days * 24 * 60 * 60 * 1000;
+  const cutoff = now - windowMs;
+  const filtered = readings.filter((r) => new Date(r.timestamp).getTime() >= cutoff);
+  if (filtered.length === 0) {
+    return {
+      summary: { temperature: { avg: 0, min: 0, max: 0 }, humidity: { avg: 0, min: 0, max: 0 }, samples: 0 },
+      range: { bucket: days <= 1 ? "hour" : "day" },
+      series: [],
+    };
+  }
+
+  const bucketMode = days <= 1 ? "hour" : "day";
+  const buckets = new Map();
+  filtered.forEach((r) => {
+    const date = new Date(r.timestamp);
+    const bucketStart = bucketMode === "hour"
+      ? new Date(date.getFullYear(), date.getMonth(), date.getDate(), date.getHours()).toISOString()
+      : new Date(date.getFullYear(), date.getMonth(), date.getDate()).toISOString();
+    if (!buckets.has(bucketStart)) {
+      buckets.set(bucketStart, { temps: [], hums: [] });
+    }
+    const bucket = buckets.get(bucketStart);
+    if (typeof r.temperature === "number") bucket.temps.push(r.temperature);
+    if (typeof r.humidity === "number") bucket.hums.push(r.humidity);
+  });
+
+  const series = Array.from(buckets.entries())
+    .sort(([a], [b]) => new Date(a) - new Date(b))
+    .map(([bucketStart, bucket]) => ({
+      bucketStart,
+      temperatureAvg: bucket.temps.length
+        ? bucket.temps.reduce((s, v) => s + v, 0) / bucket.temps.length
+        : 0,
+      humidityAvg: bucket.hums.length
+        ? bucket.hums.reduce((s, v) => s + v, 0) / bucket.hums.length
+        : 0,
+    }));
+
+  const temps = filtered.map((r) => r.temperature).filter((v) => typeof v === "number");
+  const hums = filtered.map((r) => r.humidity).filter((v) => typeof v === "number");
+
+  const tempAvg = temps.length ? temps.reduce((s, v) => s + v, 0) / temps.length : 0;
+  const humAvg = hums.length ? hums.reduce((s, v) => s + v, 0) / hums.length : 0;
+
+  return {
+    summary: {
+      temperature: {
+        avg: tempAvg,
+        min: temps.length ? Math.min(...temps) : 0,
+        max: temps.length ? Math.max(...temps) : 0,
+      },
+      humidity: {
+        avg: humAvg,
+        min: hums.length ? Math.min(...hums) : 0,
+        max: hums.length ? Math.max(...hums) : 0,
+      },
+      samples: filtered.length,
+    },
+    range: { bucket: bucketMode },
+    series,
+  };
 }
 
 function loadSubscriberConfig() {
@@ -733,14 +838,15 @@ function SubscriberPage({
   config,
   setConfig,
   status,
-  topic,
+  topics,
   messages,
   error,
+  feeds,
   onSave,
   onConnect,
   onDisconnect,
 }) {
-  const canConnect = !!(config.username && config.key && config.feed);
+  const canConnect = !!(config.username && config.key);
 
   return (
     <div className="fade-in">
@@ -798,23 +904,23 @@ function SubscriberPage({
                 }}
               />
             </label>
-            <label style={{ display: "grid", gap: 6 }}>
-              <span style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.textLt }}>Feed Key</span>
-              <input
-                value={config.feed}
-                onChange={(e) => setConfig({ ...config, feed: e.target.value.trim() })}
-                placeholder="smart_reading"
-                style={{
-                  fontFamily: FONT_BODY,
-                  fontSize: 13,
-                  padding: "8px 10px",
-                  borderRadius: 8,
-                  border: `1px solid ${C.border}`,
-                  background: "#fff",
-                  outline: "none",
-                }}
-              />
-            </label>
+            <div style={{ display: "grid", gap: 6 }}>
+              <span style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.textLt }}>Feed Keys</span>
+              <div style={{
+                fontFamily: FONT_MONO,
+                fontSize: 10,
+                color: C.textMd,
+                background: "#fff",
+                border: `1px solid ${C.border}`,
+                borderRadius: 8,
+                padding: "8px 10px",
+                lineHeight: 1.6,
+              }}>
+                {feeds.map((feed) => (
+                  <div key={feed}>{feed}</div>
+                ))}
+              </div>
+            </div>
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 14, flexWrap: "wrap" }}>
@@ -868,7 +974,7 @@ function SubscriberPage({
               </button>
             )}
             <span style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.textLt }}>
-              Topic: {topic || "—"}
+              Topics: {topics.length ? topics.length : "—"}
             </span>
           </div>
           {error && (
@@ -939,13 +1045,13 @@ function SubscriberPage({
           <div style={{ fontFamily: FONT_MONO, fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: C.textLt }}>
             Live Feed
           </div>
-          <div style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.textLt }}>{topic ? "Subscribed" : "Not connected"}</div>
+          <div style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.textLt }}>{topics.length ? "Subscribed" : "Not connected"}</div>
         </div>
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ background: C.bg2, borderBottom: `1px solid ${C.border}` }}>
-                {["Time", "Node", "Temp", "Humidity", "Raw Payload"].map(h => (
+                {["Time", "Feed", "Node", "Temp", "Humidity", "Raw Payload"].map(h => (
                   <th key={h} style={{
                     fontFamily: FONT_MONO, fontSize: 10, letterSpacing: 1.5,
                     textTransform: "uppercase", color: C.textLt,
@@ -956,10 +1062,11 @@ function SubscriberPage({
             </thead>
             <tbody>
               {messages.length === 0 ? (
-                <tr><td colSpan={5}><Empty text="No MQTT messages yet." /></td></tr>
+                <tr><td colSpan={6}><Empty text="No MQTT messages yet." /></td></tr>
               ) : messages.map(msg => (
                 <tr key={msg.id} style={{ borderBottom: `1px solid ${C.bg3}` }}>
                   <td style={{ padding: "10px 16px", fontFamily: FONT_MONO, fontSize: 11, color: C.textLt }}>{msg.time}</td>
+                  <td style={{ padding: "10px 16px", fontFamily: FONT_MONO, fontSize: 11, color: C.textLt }}>{msg.feed}</td>
                   <td style={{ padding: "10px 16px", fontFamily: FONT_MONO, fontSize: 12, color: C.brown }}>
                     {msg.parsed?.node_id || "—"}
                   </td>
@@ -1008,57 +1115,21 @@ function Empty({ text }) {
 // ─── ROOT APP ─────────────────────────────────────────────────────────────────
 export default function App() {
   const [page, setPage]         = useState("dashboard");
-  const [readings, setReadings] = useState(null);
+  const [readings, setReadings] = useState([]);
   const [analytics, setAnalytics] = useState(null);
-  const [analyticsLoading, setAnalyticsLoading] = useState(false);
-  const [analyticsError, setAnalyticsError] = useState(false);
   const [analyticsDays, setAnalyticsDays] = useState(7);
-  const [isOnline, setIsOnline] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(null);
-  const [error, setError]       = useState(false);
   const [limit, setLimit]       = useState(50);
   const [subscriberConfig, setSubscriberConfig] = useState(loadSubscriberConfig);
   const [subscriberStatus, setSubscriberStatus] = useState("disconnected");
   const [subscriberError, setSubscriberError] = useState("");
   const [subscriberMessages, setSubscriberMessages] = useState([]);
   const subscriberRef = useRef(null);
+  const nodeMapRef = useRef({});
 
-  const fetchReadings = useCallback(async () => {
-    try {
-      const res = await fetch(`${API_BASE}/api/readings?limit=${limit}`);
-      if (!res.ok) throw new Error();
-      const data = await res.json();
-      setReadings(data);
-      setIsOnline(true);
-      setError(false);
-      setLastUpdated(new Date().toLocaleTimeString("en-PH", { hour12: false }));
-    } catch {
-      setIsOnline(false);
-      setError(true);
-    }
-  }, [limit]);
-
-  const fetchAnalytics = useCallback(async () => {
-    setAnalyticsLoading(true);
-    try {
-      const res = await fetch(`${API_BASE}/api/readings/analytics?days=${analyticsDays}`);
-      if (!res.ok) throw new Error();
-      const data = await res.json();
-      setAnalytics(data);
-      setAnalyticsError(false);
-      setIsOnline(true);
-      setLastUpdated(new Date().toLocaleTimeString("en-PH", { hour12: false }));
-    } catch {
-      setAnalyticsError(true);
-      setIsOnline(false);
-    } finally {
-      setAnalyticsLoading(false);
-    }
-  }, [analyticsDays]);
-
-  const subscriberTopic = subscriberConfig.username && subscriberConfig.feed
-    ? `${subscriberConfig.username}/feeds/${subscriberConfig.feed}`
-    : "";
+  const feedTopics = subscriberConfig.username
+    ? FEED_KEYS.map((feed) => `${subscriberConfig.username}/feeds/${feed}`)
+    : [];
 
   const disconnectSubscriber = useCallback(() => {
     if (subscriberRef.current) {
@@ -1069,8 +1140,8 @@ export default function App() {
   }, []);
 
   const connectSubscriber = useCallback(() => {
-    if (!subscriberConfig.username || !subscriberConfig.key || !subscriberConfig.feed) {
-      setSubscriberError("Missing Adafruit IO credentials or feed key.");
+    if (!subscriberConfig.username || !subscriberConfig.key) {
+      setSubscriberError("Missing Adafruit IO credentials.");
       return;
     }
 
@@ -1092,9 +1163,9 @@ export default function App() {
     subscriberRef.current = client;
 
     client.on("connect", () => {
-      client.subscribe(subscriberTopic, { qos: 0 }, (err) => {
+      client.subscribe(feedTopics, { qos: 0 }, (err) => {
         if (err) {
-          setSubscriberError("Failed to subscribe to feed.");
+          setSubscriberError("Failed to subscribe to feeds.");
           setSubscriberStatus("disconnected");
         } else {
           setSubscriberStatus("connected");
@@ -1102,17 +1173,57 @@ export default function App() {
       });
     });
 
-    client.on("message", (_topic, payload) => {
-      const { text, parsed } = safeParsePayload(payload);
-      setSubscriberMessages(prev => {
+    client.on("message", (topic, payload) => {
+      const feed = topic.split("/").slice(-1)[0] || "";
+      const meta = parseFeedKey(feed);
+      const { value, text } = parseAioValue(payload);
+      if (!meta.nodeId || !meta.metric) return;
+      if (value == null) return;
+
+      const metricKey = meta.metric.includes("temp") ? "temperature" : "humidity";
+      const timestamp = new Date().toISOString();
+
+      const prevMap = nodeMapRef.current;
+      const prevNode = prevMap[meta.nodeId] || { node_id: meta.nodeId, location: meta.location };
+      const nextNode = {
+        ...prevNode,
+        node_id: meta.nodeId,
+        location: meta.location || prevNode.location,
+        [metricKey]: value,
+        timestamp,
+      };
+      nodeMapRef.current = { ...prevMap, [meta.nodeId]: nextNode };
+
+      setReadings((prevReadings) => {
+        const nextReading = {
+          id: Date.now(),
+          node_id: nextNode.node_id,
+          location: nextNode.location || "Unknown",
+          temperature: nextNode.temperature ?? null,
+          humidity: nextNode.humidity ?? null,
+          timestamp: nextNode.timestamp,
+        };
+        const updated = [nextReading, ...prevReadings];
+        return updated.slice(0, Math.max(100, limit));
+      });
+
+      setSubscriberMessages((prev) => {
+        const parsed = {
+          node_id: meta.nodeId,
+          temperature: metricKey === "temperature" ? value : undefined,
+          humidity: metricKey === "humidity" ? value : undefined,
+        };
         const next = [{
           id: `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
           time: new Date().toLocaleTimeString("en-PH", { hour12: false }),
+          feed,
           text,
           parsed,
         }, ...prev];
         return next.slice(0, 50);
       });
+
+      setLastUpdated(new Date().toLocaleTimeString("en-PH", { hour12: false }));
     });
 
     client.on("error", (err) => {
@@ -1126,43 +1237,32 @@ export default function App() {
       setSubscriberStatus("disconnected");
       subscriberRef.current = null;
     });
-  }, [subscriberConfig, subscriberTopic]);
+  }, [subscriberConfig, feedTopics, limit]);
 
   const saveSubscriberConfig = useCallback(() => {
     localStorage.setItem(SUBSCRIBER_CONFIG_KEY, JSON.stringify(subscriberConfig));
   }, [subscriberConfig]);
 
   useEffect(() => {
-    fetchReadings();
-    const id = setInterval(fetchReadings, 5000);
-    return () => clearInterval(id);
-  }, [fetchReadings]);
+    setAnalytics(buildAnalytics(readings, analyticsDays));
+  }, [readings, analyticsDays]);
+
+  useEffect(() => () => disconnectSubscriber(), [disconnectSubscriber]);
 
   useEffect(() => {
-    if (page !== "analytics") return;
-    fetchAnalytics();
-    const id = setInterval(fetchAnalytics, 30000);
-    return () => clearInterval(id);
-  }, [page, fetchAnalytics]);
-
-  useEffect(() => {
-    if (page !== "subscriber") {
-      disconnectSubscriber();
-    }
-  }, [page, disconnectSubscriber]);
-
-  useEffect(() => {
-    if (page !== "subscriber") return;
-    if (subscriberStatus !== "disconnected") return;
-    if (!subscriberConfig.username || !subscriberConfig.key || !subscriberConfig.feed) return;
+    if (subscriberStatus === "connected" || subscriberStatus === "connecting") return;
+    if (!subscriberConfig.username || !subscriberConfig.key) return;
     connectSubscriber();
-  }, [page, subscriberConfig, subscriberStatus, connectSubscriber]);
+  }, [subscriberConfig, subscriberStatus, connectSubscriber]);
+
+  const mqttOnline = subscriberStatus === "connected";
+  const readingsLimited = readings.slice(0, limit);
 
   return (
     <>
       <style>{globalStyle}</style>
       <div style={{ display: "flex", minHeight: "100vh", background: C.bg }}>
-        <Sidebar activePage={page} setActivePage={setPage} isOnline={isOnline} lastUpdated={lastUpdated} />
+        <Sidebar activePage={page} setActivePage={setPage} isOnline={mqttOnline} lastUpdated={lastUpdated} />
 
         {/* Main content */}
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
@@ -1185,12 +1285,12 @@ export default function App() {
                 : "// mqtt subscriber"}
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              {error && (
+              {!mqttOnline && (
                 <span style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.clay, background: "#fae8e8", border: "1px solid #f0c0c0", borderRadius: 6, padding: "3px 10px" }}>
-                  ⚠ Cannot reach backend
+                  ⚠ MQTT disconnected
                 </span>
               )}
-              <button onClick={page === "analytics" ? fetchAnalytics : fetchReadings} style={{
+              <button onClick={connectSubscriber} style={{
                 display: "flex", alignItems: "center", gap: 6,
                 fontFamily: FONT_MONO, fontSize: 11, color: C.brownMd,
                 background: C.bg2, border: `1px solid ${C.border}`,
@@ -1209,15 +1309,15 @@ export default function App() {
           <div style={{ flex: 1, padding: "32px", overflowY: "auto" }}>
             {page === "dashboard" && <DashboardPage readings={readings} />}
             {page === "nodes"     && <NodesPage readings={readings} />}
-            {page === "readings"  && <ReadingsPage readings={readings} limit={limit} setLimit={setLimit} />}
+            {page === "readings"  && <ReadingsPage readings={readingsLimited} limit={limit} setLimit={setLimit} />}
             {page === "analytics" && (
               <AnalyticsPage
                 analytics={analytics}
-                analyticsLoading={analyticsLoading}
-                analyticsError={analyticsError}
+                analyticsLoading={false}
+                analyticsError={false}
                 analyticsDays={analyticsDays}
                 setAnalyticsDays={setAnalyticsDays}
-                onRefresh={fetchAnalytics}
+                onRefresh={() => setAnalytics(buildAnalytics(readings, analyticsDays))}
               />
             )}
             {page === "subscriber" && (
@@ -1225,9 +1325,10 @@ export default function App() {
                 config={subscriberConfig}
                 setConfig={setSubscriberConfig}
                 status={subscriberStatus}
-                topic={subscriberTopic}
+                topics={feedTopics}
                 messages={subscriberMessages}
                 error={subscriberError}
+                feeds={FEED_KEYS}
                 onSave={saveSubscriberConfig}
                 onConnect={connectSubscriber}
                 onDisconnect={disconnectSubscriber}
