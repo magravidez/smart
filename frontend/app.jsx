@@ -748,7 +748,7 @@ function NodesPage({ readings }) {
 }
 
 // ─── PAGE: READINGS ───────────────────────────────────────────────────────────
-function ReadingsPage({ readings, limit, setLimit }) {
+function ReadingsPage({ readings, limit, setLimit, locationFilter, setLocationFilter }) {
   const [prevFirstId, setPrevFirstId] = useState(null);
   const [newId, setNewId] = useState(null);
 
@@ -768,17 +768,34 @@ function ReadingsPage({ readings, limit, setLimit }) {
           <h1 style={{ fontFamily: FONT_DISPLAY, fontSize: 30, fontWeight: 700, color: C.brown }}>All Readings</h1>
           <p style={{ color: C.textMd, fontSize: 14, marginTop: 4 }}>Sensor data log, latest first</p>
         </div>
-        <select value={limit} onChange={e => setLimit(+e.target.value)} style={{
-          fontFamily: FONT_MONO, fontSize: 12,
-          background: "#fff9f2", color: C.brown,
-          border: `1px solid ${C.border}`, borderRadius: 8,
-          padding: "8px 14px", cursor: "pointer", outline: "none",
-          marginTop: 6,
-        }}>
-          <option value={20}>Last 20</option>
-          <option value={50}>Last 50</option>
-          <option value={100}>Last 100</option>
-        </select>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <select value={locationFilter} onChange={e => setLocationFilter(e.target.value)} style={{
+            fontFamily: FONT_MONO, fontSize: 12,
+            background: "#fff9f2", color: C.brown,
+            border: `1px solid ${C.border}`, borderRadius: 8,
+            padding: "8px 14px", paddingRight: 20, cursor: "pointer", outline: "none",
+            marginTop: 6,
+          }}>
+            <option>All Locations</option>
+            <option>Rhundei City</option>
+            <option>Mariel City</option>
+            <option>Christian City</option>
+            <option>Nichole City</option>
+            <option>Kloie City</option>
+          </select>
+
+          <select value={limit} onChange={e => setLimit(+e.target.value)} style={{
+            fontFamily: FONT_MONO, fontSize: 12,
+            background: "#fff9f2", color: C.brown,
+            border: `1px solid ${C.border}`, borderRadius: 8,
+            padding: "8px 14px", paddingRight: 20, cursor: "pointer", outline: "none",
+            marginTop: 6,
+          }}>
+            <option value={20}>Last 20</option>
+            <option value={50}>Last 50</option>
+            <option value={100}>Last 100</option>
+          </select>
+        </div>
       </div>
 
       <div style={{
@@ -1098,6 +1115,7 @@ function Empty({ text }) {
 export default function App() {
   const [page, setPage]         = useState("dashboard");
   const [readings, setReadings] = useState([]);
+  const [locationFilter, setLocationFilter] = useState("All Locations");
   const [analytics, setAnalytics] = useState(null);
   const [analyticsDays, setAnalyticsDays] = useState(7);
   const [lastUpdated, setLastUpdated] = useState(null);
@@ -1253,7 +1271,15 @@ export default function App() {
   }, [subscriberConfig, subscriberStatus, connectSubscriber]);
 
   const mqttOnline = subscriberStatus === "connected";
-  const readingsLimited = readings.slice(0, limit);
+  function normalizeLocation(s) {
+    return (s || "").toString().trim().toLowerCase().replace(/_/g, " ");
+  }
+
+  const filteredReadings = locationFilter === "All Locations"
+    ? readings
+    : readings.filter(r => normalizeLocation(r.location) === normalizeLocation(locationFilter));
+
+  const readingsLimited = filteredReadings.slice(0, limit);
 
   return (
     <>
@@ -1306,7 +1332,15 @@ export default function App() {
           <div style={{ flex: 1, padding: "32px", overflowY: "auto" }}>
             {page === "dashboard" && <DashboardPage readings={readings} />}
             {page === "nodes"     && <NodesPage readings={readings} />}
-            {page === "readings"  && <ReadingsPage readings={readingsLimited} limit={limit} setLimit={setLimit} />}
+            {page === "readings"  && (
+              <ReadingsPage
+                readings={readingsLimited}
+                limit={limit}
+                setLimit={setLimit}
+                locationFilter={locationFilter}
+                setLocationFilter={setLocationFilter}
+              />
+            )}
             {page === "analytics" && (
               <AnalyticsPage
                 analytics={analytics}
