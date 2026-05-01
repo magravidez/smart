@@ -50,6 +50,8 @@ const FEED_KEYS = [
   "node-3-christian-city-temp",
   "node-4-nichole-city-humidity",
   "node-4-nichole-city-temp",
+  "node-5-kloie-city-humidity",
+  "node-5-kloie-city-temp",
 ];
 
 function fmt(n, d = 1) {
