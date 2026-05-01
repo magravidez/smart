@@ -357,10 +357,11 @@ function NodeCard({ node, delay = 0 }) {
       background: "#fff9f2",
       border: `1px solid ${C.border}`,
       borderRadius: 14,
-      padding: "18px 20px",
+      padding: "22px 24px",
       display: "flex",
       flexDirection: "column",
-      gap: 12,
+      gap: 14,
+      height: "100%",
       boxShadow: "0 1px 4px rgba(45,36,22,.06)",
       transition: "box-shadow .2s, transform .2s",
     }}
@@ -368,8 +369,8 @@ function NodeCard({ node, delay = 0 }) {
     onMouseLeave={e => { e.currentTarget.style.boxShadow = "0 1px 4px rgba(45,36,22,.06)"; e.currentTarget.style.transform = "translateY(0)"; }}
     >
       {/* Top row */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-        <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start" }}>
           <div style={{ fontFamily: FONT_MONO, fontWeight: 600, fontSize: 13, color: C.brown }}>{node.node_id}</div>
           <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 3, color: C.textLt, fontSize: 11 }}>
             {Icon.location}
@@ -388,28 +389,32 @@ function NodeCard({ node, delay = 0 }) {
       </div>
 
       {/* Readings */}
-      <div style={{ display: "flex", gap: 12 }}>
+      <div style={{ display: "flex", gap: 14, alignItems: "stretch", justifyContent: "center" }}>
         <div style={{
-          flex: 1, background: "#fff3e6", border: `1px solid #f0d4b0`,
-          borderRadius: 10, padding: "10px 14px",
+          flex: "0 1 150px", background: "#fff3e6", border: `1px solid #f0d4b0`,
+          borderRadius: 10, padding: "12px 16px",
+          display: "flex", flexDirection: "column", justifyContent: "space-between",
+          minHeight: 82,
         }}>
           <div style={{ display: "flex", alignItems: "center", gap: 4, color: C.amber, marginBottom: 4 }}>
             {Icon.temp}
             <span style={{ fontFamily: FONT_MONO, fontSize: 9, letterSpacing: 1.2, textTransform: "uppercase" }}>Temp</span>
           </div>
-          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 26, fontWeight: 700, color: C.amber, lineHeight: 1 }}>
+          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 28, fontWeight: 700, color: C.amber, lineHeight: 1, display: "flex", alignItems: "baseline", gap: 4 }}>
             {fmt(node.temperature)}<span style={{ fontSize: 14 }}>°C</span>
           </div>
         </div>
         <div style={{
-          flex: 1, background: "#e8f2fa", border: `1px solid #b0d0e8`,
-          borderRadius: 10, padding: "10px 14px",
+          flex: "0 1 150px", background: "#e8f2fa", border: `1px solid #b0d0e8`,
+          borderRadius: 10, padding: "12px 16px",
+          display: "flex", flexDirection: "column", justifyContent: "space-between",
+          minHeight: 82,
         }}>
           <div style={{ display: "flex", alignItems: "center", gap: 4, color: C.sky, marginBottom: 4 }}>
             {Icon.humidity}
             <span style={{ fontFamily: FONT_MONO, fontSize: 9, letterSpacing: 1.2, textTransform: "uppercase" }}>Humidity</span>
           </div>
-          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 26, fontWeight: 700, color: C.sky, lineHeight: 1 }}>
+          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 28, fontWeight: 700, color: C.sky, lineHeight: 1, display: "flex", alignItems: "baseline", gap: 4 }}>
             {fmt(node.humidity)}<span style={{ fontSize: 14 }}>%</span>
           </div>
         </div>
@@ -706,7 +711,13 @@ function DashboardPage({ readings }) {
         <h2 style={{ fontFamily: FONT_MONO, fontSize: 11, letterSpacing: 1.5, textTransform: "uppercase", color: C.textLt, marginBottom: 14 }}>
           Latest per Node
         </h2>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(220px,1fr))", gap: 14 }}>
+        <div style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fill,minmax(240px,1fr))",
+          gap: 16,
+          alignItems: "stretch",
+          gridAutoRows: "1fr",
+        }}>
           {nodeList.map((n, i) => <NodeCard key={n.node_id} node={n} delay={i * .07} />)}
         </div>
       </div>
