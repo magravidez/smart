@@ -10,6 +10,7 @@ The current implementation uses MQTT Pub/Sub with Adafruit IO:
 - Backend subscribes to the feed, validates payloads, and stores to NeonDB via Prisma.
 - Frontend fetches persisted data from `GET /api/readings`.
 - IoT MQTT Panel can subscribe to the same feed for live phone monitoring.
+- Custom Subscriber (frontend) can connect to Adafruit IO via MQTT over WebSockets.
 
 ---
 
@@ -138,3 +139,13 @@ The API will be available at `http://localhost:3000`.
 | `limit`   | int  | 50      | Max number of readings |
 
 **Example:** `GET /api/readings?limit=20`
+
+---
+
+## Custom Subscriber (Frontend)
+
+The frontend includes a **Custom Subscriber** page that connects to Adafruit IO using MQTT over WebSockets. Configure your Adafruit IO username, key, and feed key in the UI, then connect to see live messages.
+
+### GitHub Pages
+
+The frontend is set up for GitHub Pages using `base: "/smart/"` in `frontend/vite.config.js`. If your repo name differs, set `VITE_BASE` during build.

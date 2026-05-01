@@ -11,16 +11,20 @@ const char* password = "YOUR_WIFI_PASSWORD";
 
 #define AIO_SERVER      "io.adafruit.com"
 #define AIO_SERVERPORT  1883
-#define AIO_USERNAME    "YOUR_ADAFRUIT_USERNAME"
-#define AIO_KEY         "YOUR_ADAFRUIT_AIO_KEY"
-#define AIO_FEED_READING "smart_reading"
-#define AIO_FEED_COMMAND "smart_cmd"
+#define AIO_USERNAME    "YOUR_ADAFRUIT_IO_USERNAME"
+#define AIO_KEY         "YOUR_ADAFRUIT_IO_KEY"
+
+// ------------------------------
+// Feed definitions (change per node)
+// ------------------------------
+#define AIO_FEED_TEMP     "Node 1 Rhundei City Temp"
+#define AIO_FEED_HUMIDITY "Node 1 Rhundei City Humidity"
 
 // ------------------------------
 // Node Identity (change per Arduino)
 // ------------------------------
-const char* NODE_ID  = "NODE_01";
-const char* LOCATION = "North_Field"; // e.g. "Tomato_Greenhouse", "South_Field"
+const char* NODE_ID  = "NODE 01";
+const char* LOCATION = "Rhundei City";
 
 // ------------------------------
 // Pin definitions
@@ -28,33 +32,29 @@ const char* LOCATION = "North_Field"; // e.g. "Tomato_Greenhouse", "South_Field"
 #define DHTPIN  2
 #define DHTTYPE DHT11
 
-const int LDR_PIN    = A0;
-const int LED_PIN    = 7;
-const int BUZZER_PIN = 8;
+const int LDR_PIN = A0;
 
 // ------------------------------
 // Thresholds & timing
 // ------------------------------
-const float TEMP_THRESHOLD    = 28.0;
-const int   LDR_DAY_THRESHOLD = 300; // Tune based on your environment
-const unsigned long SEND_INTERVAL = 5000;
+const int   LDR_DAY_THRESHOLD = 300;
+const unsigned long SEND_INTERVAL = 30000;
 unsigned long lastSendTime = 0;
 
 DHT dht(DHTPIN, DHTTYPE);
 WiFiClient wifiClient;
 Adafruit_MQTT_Client mqtt(&wifiClient, AIO_SERVER, AIO_SERVERPORT, AIO_USERNAME, AIO_KEY);
-Adafruit_MQTT_Publish readingFeed = Adafruit_MQTT_Publish(&mqtt, AIO_USERNAME "/feeds/" AIO_FEED_READING);
-Adafruit_MQTT_Subscribe commandFeed = Adafruit_MQTT_Subscribe(&mqtt, AIO_USERNAME "/feeds/" AIO_FEED_COMMAND);
 
-bool manualAlertOverride = false;
-bool manualAlertState = false;
+// ------------------------------
+// Publish feeds
+// ------------------------------
+Adafruit_MQTT_Publish tempFeed     = Adafruit_MQTT_Publish(&mqtt, AIO_USERNAME "/feeds/" AIO_FEED_TEMP);
+Adafruit_MQTT_Publish humidityFeed = Adafruit_MQTT_Publish(&mqtt, AIO_USERNAME "/feeds/" AIO_FEED_HUMIDITY);
 
-// Function prototype
+// Function prototypes
 void connectWiFi();
 void MQTT_connect();
-void applyAlertOutputs(bool alertOn);
-void processCommand(String command);
-void publishReading(float temperature, float humidity);
+void publishReadings(float temperature, float humidity);
 
 void setup() {
   Serial.begin(9600);
@@ -62,19 +62,12 @@ void setup() {
 
   dht.begin();
 
-  pinMode(LED_PIN,    OUTPUT);
-  pinMode(BUZZER_PIN, OUTPUT);
-
-  digitalWrite(LED_PIN, LOW);
-  noTone(BUZZER_PIN);
-
   Serial.print("Node ID : ");
   Serial.println(NODE_ID);
   Serial.print("Location: ");
   Serial.println(LOCATION);
 
   connectWiFi();
-  mqtt.subscribe(&commandFeed);
 }
 
 void loop() {
@@ -83,17 +76,6 @@ void loop() {
   }
 
   MQTT_connect();
-
-  Adafruit_MQTT_Subscribe* subscription;
-  while ((subscription = mqtt.readSubscription(100))) {
-    if (subscription == &commandFeed) {
-      String command = String((char*)commandFeed.lastread);
-      command.trim();
-      command.toUpperCase();
-      processCommand(command);
-    }
-  }
-
   mqtt.ping();
 
   unsigned long now = millis();
@@ -107,11 +89,7 @@ void loop() {
     Serial.print(ldrValue);
 
     if (ldrValue < LDR_DAY_THRESHOLD) {
-      // Nighttime - skip transmission
       Serial.println(" -> NIGHTTIME detected. Skipping transmission.");
-      if (!manualAlertOverride) {
-        applyAlertOutputs(false);
-      }
       return;
     }
 
@@ -124,13 +102,6 @@ void loop() {
     if (isnan(humidity) || isnan(temperature)) {
       Serial.println("Failed to read from DHT11 sensor.");
       return;
-    }
-
-    // --- Local alert logic (LED + Buzzer) ---
-    if (manualAlertOverride) {
-      applyAlertOutputs(manualAlertState);
-    } else {
-      applyAlertOutputs(temperature > TEMP_THRESHOLD);
     }
 
     // --- Serial log ---
@@ -146,7 +117,7 @@ void loop() {
     Serial.println(ldrValue);
 
     // --- Publish to Adafruit IO ---
-    publishReading(temperature, humidity);
+    publishReadings(temperature, humidity);
   }
 }
 
@@ -171,7 +142,7 @@ void MQTT_connect() {
   int8_t ret;
   while ((ret = mqtt.connect()) != 0) {
     Serial.print(".");
-    Serial.print(mqtt.connectErrorString(ret));
+    Serial.println(mqtt.connectErrorString(ret));
     mqtt.disconnect();
     delay(5000);
   }
@@ -179,56 +150,23 @@ void MQTT_connect() {
   Serial.println("MQTT connected!");
 }
 
-void applyAlertOutputs(bool alertOn) {
-  if (alertOn) {
-    digitalWrite(LED_PIN, HIGH);
-    tone(BUZZER_PIN, 2000);
+void publishReadings(float temperature, float humidity) {
+
+  // --- Publish plain temperature ---
+  if (tempFeed.publish(temperature)) {
+    Serial.print("Temp published: ");
+    Serial.println(temperature);
   } else {
-    digitalWrite(LED_PIN, LOW);
-    noTone(BUZZER_PIN);
-  }
-}
-
-void processCommand(String command) {
-  Serial.print("[COMMAND] ");
-  Serial.println(command);
-
-  if (command == "ALERT_ON") {
-    manualAlertOverride = true;
-    manualAlertState = true;
-    applyAlertOutputs(true);
-    return;
+    Serial.println("Temp publish FAILED.");
   }
 
-  if (command == "ALERT_OFF") {
-    manualAlertOverride = true;
-    manualAlertState = false;
-    applyAlertOutputs(false);
-    return;
-  }
+  delay(500);
 
-  if (command == "ALERT_AUTO") {
-    manualAlertOverride = false;
-    applyAlertOutputs(false);
-    return;
-  }
-
-  Serial.println("Unknown command. Use ALERT_ON, ALERT_OFF, or ALERT_AUTO.");
-}
-
-void publishReading(float temperature, float humidity) {
-  String payload = "{";
-  payload += "\"node_id\":\"" + String(NODE_ID) + "\",";
-  payload += "\"location\":\"" + String(LOCATION) + "\",";
-  payload += "\"temperature\":" + String(temperature, 1) + ",";
-  payload += "\"humidity\":" + String(humidity, 1);
-  payload += "}";
-
-  if (readingFeed.publish(payload.c_str())) {
-    Serial.println("MQTT publish sent:");
-    Serial.println(payload);
+  // --- Publish plain humidity ---
+  if (humidityFeed.publish(humidity)) {
+    Serial.print("Humidity published: ");
+    Serial.println(humidity);
   } else {
-    Serial.println("MQTT publish failed.");
-    mqtt.disconnect();
+    Serial.println("Humidity publish FAILED.");
   }
 }

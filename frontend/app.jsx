@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import mqtt from "mqtt";
 import {
   ResponsiveContainer,
   LineChart,
@@ -36,6 +37,13 @@ const FONT_BODY    = "'DM Sans', sans-serif";
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 const API_BASE = import.meta.env.VITE_API_BASE || `http://${window.location.hostname}:3000`;
+const AIO_DEFAULT = {
+  username: import.meta.env.VITE_AIO_USERNAME || "",
+  key: import.meta.env.VITE_AIO_KEY || "",
+  feed: import.meta.env.VITE_AIO_FEED || "smart_reading",
+};
+const AIO_HOST = "wss://io.adafruit.com:443/mqtt";
+const SUBSCRIBER_CONFIG_KEY = "smart_subscriber_config";
 
 function fmt(n, d = 1) {
   return n != null ? (+n).toFixed(d) : "—";
@@ -85,6 +93,28 @@ function getLatestPerNode(readings) {
     }
   });
   return Object.values(map);
+}
+
+function safeParsePayload(payload) {
+  const text = payload?.toString?.() ?? "";
+  if (!text) return { text, parsed: null };
+  try {
+    const parsed = JSON.parse(text);
+    return { text, parsed };
+  } catch {
+    return { text, parsed: null };
+  }
+}
+
+function loadSubscriberConfig() {
+  try {
+    const raw = localStorage.getItem(SUBSCRIBER_CONFIG_KEY);
+    if (!raw) return AIO_DEFAULT;
+    const parsed = JSON.parse(raw);
+    return { ...AIO_DEFAULT, ...parsed };
+  } catch {
+    return AIO_DEFAULT;
+  }
 }
 
 // ─── ICONS ───────────────────────────────────────────────────────────────────
@@ -138,6 +168,14 @@ const Icon = {
     <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8">
       <path d="M1.42 9a16 16 0 0121.16 0"/><path d="M5 12.55a11 11 0 0114.08 0"/>
       <path d="M8.53 16.11a6 6 0 016.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/>
+    </svg>
+  ),
+  subscriber: (
+    <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8">
+      <path d="M4 12a8 8 0 0116 0"/>
+      <path d="M7 12a5 5 0 0110 0"/>
+      <path d="M10 12a2 2 0 014 0"/>
+      <circle cx="12" cy="16" r="2"/>
     </svg>
   ),
   refresh: (
@@ -293,6 +331,7 @@ function Sidebar({ activePage, setActivePage, isOnline, lastUpdated }) {
     { id: "nodes",     label: "Node Overview", icon: Icon.nodes },
     { id: "readings",  label: "All Readings",  icon: Icon.readings },
     { id: "analytics", label: "Analytics", icon: Icon.analytics },
+    { id: "subscriber", label: "Custom Subscriber", icon: Icon.subscriber },
   ];
 
   return (
@@ -689,6 +728,262 @@ function ReadingsPage({ readings, limit, setLimit }) {
   );
 }
 
+// ─── PAGE: CUSTOM SUBSCRIBER ────────────────────────────────────────────────
+function SubscriberPage({
+  config,
+  setConfig,
+  status,
+  topic,
+  messages,
+  error,
+  onSave,
+  onConnect,
+  onDisconnect,
+}) {
+  const canConnect = !!(config.username && config.key && config.feed);
+
+  return (
+    <div className="fade-in">
+      <div style={{ marginBottom: 24 }}>
+        <h1 style={{ fontFamily: FONT_DISPLAY, fontSize: 30, fontWeight: 700, color: C.brown }}>Custom Subscriber</h1>
+        <p style={{ color: C.textMd, fontSize: 14, marginTop: 4 }}>
+          Live MQTT feed from Adafruit IO (broker) to this web client
+        </p>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))", gap: 16, marginBottom: 22 }}>
+        <div style={{
+          background: "#fff9f2",
+          border: `1px solid ${C.border}`,
+          borderRadius: 16,
+          padding: "16px 18px",
+          boxShadow: "0 1px 6px rgba(45,36,22,.06)",
+        }}>
+          <div style={{ fontFamily: FONT_MONO, fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: C.textLt, marginBottom: 10 }}>
+            Adafruit IO MQTT Config
+          </div>
+          <div style={{ display: "grid", gap: 10 }}>
+            <label style={{ display: "grid", gap: 6 }}>
+              <span style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.textLt }}>Username</span>
+              <input
+                value={config.username}
+                onChange={(e) => setConfig({ ...config, username: e.target.value.trim() })}
+                placeholder="your_adafruit_username"
+                style={{
+                  fontFamily: FONT_BODY,
+                  fontSize: 13,
+                  padding: "8px 10px",
+                  borderRadius: 8,
+                  border: `1px solid ${C.border}`,
+                  background: "#fff",
+                  outline: "none",
+                }}
+              />
+            </label>
+            <label style={{ display: "grid", gap: 6 }}>
+              <span style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.textLt }}>AIO Key</span>
+              <input
+                type="password"
+                value={config.key}
+                onChange={(e) => setConfig({ ...config, key: e.target.value.trim() })}
+                placeholder="aio_xxxxxxxx"
+                style={{
+                  fontFamily: FONT_BODY,
+                  fontSize: 13,
+                  padding: "8px 10px",
+                  borderRadius: 8,
+                  border: `1px solid ${C.border}`,
+                  background: "#fff",
+                  outline: "none",
+                }}
+              />
+            </label>
+            <label style={{ display: "grid", gap: 6 }}>
+              <span style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.textLt }}>Feed Key</span>
+              <input
+                value={config.feed}
+                onChange={(e) => setConfig({ ...config, feed: e.target.value.trim() })}
+                placeholder="smart_reading"
+                style={{
+                  fontFamily: FONT_BODY,
+                  fontSize: 13,
+                  padding: "8px 10px",
+                  borderRadius: 8,
+                  border: `1px solid ${C.border}`,
+                  background: "#fff",
+                  outline: "none",
+                }}
+              />
+            </label>
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 14, flexWrap: "wrap" }}>
+            <button
+              onClick={onSave}
+              style={{
+                fontFamily: FONT_MONO,
+                fontSize: 11,
+                color: C.brown,
+                background: C.bg2,
+                border: `1px solid ${C.border}`,
+                borderRadius: 8,
+                padding: "7px 12px",
+                cursor: "pointer",
+              }}
+            >
+              Save Config
+            </button>
+            {status === "connected" ? (
+              <button
+                onClick={onDisconnect}
+                style={{
+                  fontFamily: FONT_MONO,
+                  fontSize: 11,
+                  color: "#fff",
+                  background: C.clay,
+                  border: "1px solid #8f2f16",
+                  borderRadius: 8,
+                  padding: "7px 12px",
+                  cursor: "pointer",
+                }}
+              >
+                Disconnect
+              </button>
+            ) : (
+              <button
+                onClick={onConnect}
+                disabled={!canConnect}
+                style={{
+                  fontFamily: FONT_MONO,
+                  fontSize: 11,
+                  color: canConnect ? "#fff" : "#b9a995",
+                  background: canConnect ? C.sage : C.bg3,
+                  border: `1px solid ${canConnect ? "#3a5a28" : C.border}`,
+                  borderRadius: 8,
+                  padding: "7px 12px",
+                  cursor: canConnect ? "pointer" : "not-allowed",
+                }}
+              >
+                Connect
+              </button>
+            )}
+            <span style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.textLt }}>
+              Topic: {topic || "—"}
+            </span>
+          </div>
+          {error && (
+            <div style={{
+              marginTop: 10,
+              fontFamily: FONT_MONO,
+              fontSize: 10,
+              color: C.clay,
+              background: "#fae8e8",
+              border: "1px solid #f0c0c0",
+              borderRadius: 6,
+              padding: "6px 8px",
+            }}>
+              {error}
+            </div>
+          )}
+        </div>
+
+        <div style={{
+          background: "#fff9f2",
+          border: `1px solid ${C.border}`,
+          borderRadius: 16,
+          padding: "16px 18px",
+          boxShadow: "0 1px 6px rgba(45,36,22,.06)",
+          display: "grid",
+          gap: 10,
+        }}>
+          <div style={{ fontFamily: FONT_MONO, fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: C.textLt }}>
+            Connection Status
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{
+              width: 9,
+              height: 9,
+              borderRadius: "50%",
+              background: status === "connected" ? C.sage : status === "connecting" ? C.amber : C.clay,
+              boxShadow: `0 0 6px ${status === "connected" ? C.sage : status === "connecting" ? C.amber : C.clay}`,
+            }} />
+            <span style={{ fontFamily: FONT_MONO, fontSize: 12, color: C.textMd }}>
+              {status.toUpperCase()}
+            </span>
+          </div>
+          <div style={{ display: "grid", gap: 6, fontFamily: FONT_MONO, fontSize: 11, color: C.textLt }}>
+            <div>Broker: {AIO_HOST}</div>
+            <div>Messages: {messages.length}</div>
+            <div>Last: {messages[0]?.time ?? "—"}</div>
+          </div>
+          <div style={{
+            marginTop: 8,
+            fontFamily: FONT_BODY,
+            fontSize: 13,
+            color: C.textMd,
+            lineHeight: 1.6,
+          }}>
+            This subscriber uses MQTT over WebSockets to connect directly to Adafruit IO.
+          </div>
+        </div>
+      </div>
+
+      <div style={{
+        background: "#fff9f2",
+        border: `1px solid ${C.border}`,
+        borderRadius: 16,
+        overflow: "hidden",
+        boxShadow: "0 1px 6px rgba(45,36,22,.06)",
+      }}>
+        <div style={{ padding: "14px 18px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ fontFamily: FONT_MONO, fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: C.textLt }}>
+            Live Feed
+          </div>
+          <div style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.textLt }}>{topic ? "Subscribed" : "Not connected"}</div>
+        </div>
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr style={{ background: C.bg2, borderBottom: `1px solid ${C.border}` }}>
+                {["Time", "Node", "Temp", "Humidity", "Raw Payload"].map(h => (
+                  <th key={h} style={{
+                    fontFamily: FONT_MONO, fontSize: 10, letterSpacing: 1.5,
+                    textTransform: "uppercase", color: C.textLt,
+                    padding: "12px 16px", textAlign: "left", whiteSpace: "nowrap",
+                  }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {messages.length === 0 ? (
+                <tr><td colSpan={5}><Empty text="No MQTT messages yet." /></td></tr>
+              ) : messages.map(msg => (
+                <tr key={msg.id} style={{ borderBottom: `1px solid ${C.bg3}` }}>
+                  <td style={{ padding: "10px 16px", fontFamily: FONT_MONO, fontSize: 11, color: C.textLt }}>{msg.time}</td>
+                  <td style={{ padding: "10px 16px", fontFamily: FONT_MONO, fontSize: 12, color: C.brown }}>
+                    {msg.parsed?.node_id || "—"}
+                  </td>
+                  <td style={{ padding: "10px 16px", fontFamily: FONT_MONO, fontSize: 12, color: C.amber }}>
+                    {msg.parsed?.temperature != null ? `${fmt(msg.parsed.temperature)} °C` : "—"}
+                  </td>
+                  <td style={{ padding: "10px 16px", fontFamily: FONT_MONO, fontSize: 12, color: C.sky }}>
+                    {msg.parsed?.humidity != null ? `${fmt(msg.parsed.humidity)} %` : "—"}
+                  </td>
+                  <td style={{ padding: "10px 16px", fontFamily: FONT_BODY, fontSize: 12, color: C.textMd, maxWidth: 380 }}>
+                    <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      {msg.text || "—"}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── LOADER / EMPTY ───────────────────────────────────────────────────────────
 function Loader({ text }) {
   return (
@@ -722,6 +1017,11 @@ export default function App() {
   const [lastUpdated, setLastUpdated] = useState(null);
   const [error, setError]       = useState(false);
   const [limit, setLimit]       = useState(50);
+  const [subscriberConfig, setSubscriberConfig] = useState(loadSubscriberConfig);
+  const [subscriberStatus, setSubscriberStatus] = useState("disconnected");
+  const [subscriberError, setSubscriberError] = useState("");
+  const [subscriberMessages, setSubscriberMessages] = useState([]);
+  const subscriberRef = useRef(null);
 
   const fetchReadings = useCallback(async () => {
     try {
@@ -756,6 +1056,82 @@ export default function App() {
     }
   }, [analyticsDays]);
 
+  const subscriberTopic = subscriberConfig.username && subscriberConfig.feed
+    ? `${subscriberConfig.username}/feeds/${subscriberConfig.feed}`
+    : "";
+
+  const disconnectSubscriber = useCallback(() => {
+    if (subscriberRef.current) {
+      subscriberRef.current.end(true);
+      subscriberRef.current = null;
+    }
+    setSubscriberStatus("disconnected");
+  }, []);
+
+  const connectSubscriber = useCallback(() => {
+    if (!subscriberConfig.username || !subscriberConfig.key || !subscriberConfig.feed) {
+      setSubscriberError("Missing Adafruit IO credentials or feed key.");
+      return;
+    }
+
+    if (subscriberRef.current) return;
+
+    setSubscriberError("");
+    setSubscriberStatus("connecting");
+
+    const client = mqtt.connect(AIO_HOST, {
+      username: subscriberConfig.username,
+      password: subscriberConfig.key,
+      clientId: `smart-web-${Math.random().toString(16).slice(2, 10)}`,
+      keepalive: 30,
+      reconnectPeriod: 2000,
+      connectTimeout: 8000,
+      clean: true,
+    });
+
+    subscriberRef.current = client;
+
+    client.on("connect", () => {
+      client.subscribe(subscriberTopic, { qos: 0 }, (err) => {
+        if (err) {
+          setSubscriberError("Failed to subscribe to feed.");
+          setSubscriberStatus("disconnected");
+        } else {
+          setSubscriberStatus("connected");
+        }
+      });
+    });
+
+    client.on("message", (_topic, payload) => {
+      const { text, parsed } = safeParsePayload(payload);
+      setSubscriberMessages(prev => {
+        const next = [{
+          id: `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+          time: new Date().toLocaleTimeString("en-PH", { hour12: false }),
+          text,
+          parsed,
+        }, ...prev];
+        return next.slice(0, 50);
+      });
+    });
+
+    client.on("error", (err) => {
+      setSubscriberError(err?.message || "MQTT connection error.");
+      setSubscriberStatus("disconnected");
+      client.end(true);
+      subscriberRef.current = null;
+    });
+
+    client.on("close", () => {
+      setSubscriberStatus("disconnected");
+      subscriberRef.current = null;
+    });
+  }, [subscriberConfig, subscriberTopic]);
+
+  const saveSubscriberConfig = useCallback(() => {
+    localStorage.setItem(SUBSCRIBER_CONFIG_KEY, JSON.stringify(subscriberConfig));
+  }, [subscriberConfig]);
+
   useEffect(() => {
     fetchReadings();
     const id = setInterval(fetchReadings, 5000);
@@ -768,6 +1144,19 @@ export default function App() {
     const id = setInterval(fetchAnalytics, 30000);
     return () => clearInterval(id);
   }, [page, fetchAnalytics]);
+
+  useEffect(() => {
+    if (page !== "subscriber") {
+      disconnectSubscriber();
+    }
+  }, [page, disconnectSubscriber]);
+
+  useEffect(() => {
+    if (page !== "subscriber") return;
+    if (subscriberStatus !== "disconnected") return;
+    if (!subscriberConfig.username || !subscriberConfig.key || !subscriberConfig.feed) return;
+    connectSubscriber();
+  }, [page, subscriberConfig, subscriberStatus, connectSubscriber]);
 
   return (
     <>
@@ -791,7 +1180,9 @@ export default function App() {
                 ? "// node status"
                 : page === "readings"
                 ? "// readings log"
-                : "// analytics"}
+                : page === "analytics"
+                ? "// analytics"
+                : "// mqtt subscriber"}
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               {error && (
@@ -827,6 +1218,19 @@ export default function App() {
                 analyticsDays={analyticsDays}
                 setAnalyticsDays={setAnalyticsDays}
                 onRefresh={fetchAnalytics}
+              />
+            )}
+            {page === "subscriber" && (
+              <SubscriberPage
+                config={subscriberConfig}
+                setConfig={setSubscriberConfig}
+                status={subscriberStatus}
+                topic={subscriberTopic}
+                messages={subscriberMessages}
+                error={subscriberError}
+                onSave={saveSubscriberConfig}
+                onConnect={connectSubscriber}
+                onDisconnect={disconnectSubscriber}
               />
             )}
           </div>
