@@ -41,7 +41,6 @@ const AIO_DEFAULT = {
   key: import.meta.env.VITE_AIO_KEY || "",
 };
 const AIO_HOST = "wss://io.adafruit.com:443/mqtt";
-const SUBSCRIBER_CONFIG_KEY = "smart_subscriber_config";
 const FEED_KEYS = [
   "node-1-rhundei-city-humidity",
   "node-1-rhundei-city-temp",
@@ -212,14 +211,7 @@ function buildAnalytics(readings, days) {
 }
 
 function loadSubscriberConfig() {
-  try {
-    const raw = localStorage.getItem(SUBSCRIBER_CONFIG_KEY);
-    if (!raw) return AIO_DEFAULT;
-    const parsed = JSON.parse(raw);
-    return { ...AIO_DEFAULT, ...parsed };
-  } catch {
-    return AIO_DEFAULT;
-  }
+  return AIO_DEFAULT;
 }
 
 // ─── ICONS ───────────────────────────────────────────────────────────────────
@@ -836,17 +828,16 @@ function ReadingsPage({ readings, limit, setLimit }) {
 // ─── PAGE: CUSTOM SUBSCRIBER ────────────────────────────────────────────────
 function SubscriberPage({
   config,
-  setConfig,
   status,
   topics,
   messages,
   error,
   feeds,
-  onSave,
   onConnect,
   onDisconnect,
 }) {
   const canConnect = !!(config.username && config.key);
+  const maskedKey = config.key ? `${config.key.slice(0, 6)}...${config.key.slice(-4)}` : "—";
 
   return (
     <div className="fade-in">
@@ -869,41 +860,34 @@ function SubscriberPage({
             Adafruit IO MQTT Config
           </div>
           <div style={{ display: "grid", gap: 10 }}>
-            <label style={{ display: "grid", gap: 6 }}>
+            <div style={{ display: "grid", gap: 6 }}>
               <span style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.textLt }}>Username</span>
-              <input
-                value={config.username}
-                onChange={(e) => setConfig({ ...config, username: e.target.value.trim() })}
-                placeholder="your_adafruit_username"
-                style={{
-                  fontFamily: FONT_BODY,
-                  fontSize: 13,
-                  padding: "8px 10px",
-                  borderRadius: 8,
-                  border: `1px solid ${C.border}`,
-                  background: "#fff",
-                  outline: "none",
-                }}
-              />
-            </label>
-            <label style={{ display: "grid", gap: 6 }}>
+              <div style={{
+                fontFamily: FONT_MONO,
+                fontSize: 11,
+                color: C.textMd,
+                background: "#fff",
+                border: `1px solid ${C.border}`,
+                borderRadius: 8,
+                padding: "8px 10px",
+              }}>
+                {config.username || "—"}
+              </div>
+            </div>
+            <div style={{ display: "grid", gap: 6 }}>
               <span style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.textLt }}>AIO Key</span>
-              <input
-                type="password"
-                value={config.key}
-                onChange={(e) => setConfig({ ...config, key: e.target.value.trim() })}
-                placeholder="aio_xxxxxxxx"
-                style={{
-                  fontFamily: FONT_BODY,
-                  fontSize: 13,
-                  padding: "8px 10px",
-                  borderRadius: 8,
-                  border: `1px solid ${C.border}`,
-                  background: "#fff",
-                  outline: "none",
-                }}
-              />
-            </label>
+              <div style={{
+                fontFamily: FONT_MONO,
+                fontSize: 11,
+                color: C.textMd,
+                background: "#fff",
+                border: `1px solid ${C.border}`,
+                borderRadius: 8,
+                padding: "8px 10px",
+              }}>
+                {maskedKey}
+              </div>
+            </div>
             <div style={{ display: "grid", gap: 6 }}>
               <span style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.textLt }}>Feed Keys</span>
               <div style={{
@@ -924,21 +908,6 @@ function SubscriberPage({
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 14, flexWrap: "wrap" }}>
-            <button
-              onClick={onSave}
-              style={{
-                fontFamily: FONT_MONO,
-                fontSize: 11,
-                color: C.brown,
-                background: C.bg2,
-                border: `1px solid ${C.border}`,
-                borderRadius: 8,
-                padding: "7px 12px",
-                cursor: "pointer",
-              }}
-            >
-              Save Config
-            </button>
             {status === "connected" ? (
               <button
                 onClick={onDisconnect}
@@ -1120,7 +1089,7 @@ export default function App() {
   const [analyticsDays, setAnalyticsDays] = useState(7);
   const [lastUpdated, setLastUpdated] = useState(null);
   const [limit, setLimit]       = useState(50);
-  const [subscriberConfig, setSubscriberConfig] = useState(loadSubscriberConfig);
+  const [subscriberConfig] = useState(loadSubscriberConfig);
   const [subscriberStatus, setSubscriberStatus] = useState("disconnected");
   const [subscriberError, setSubscriberError] = useState("");
   const [subscriberMessages, setSubscriberMessages] = useState([]);
@@ -1141,7 +1110,7 @@ export default function App() {
 
   const connectSubscriber = useCallback(() => {
     if (!subscriberConfig.username || !subscriberConfig.key) {
-      setSubscriberError("Missing Adafruit IO credentials.");
+      setSubscriberError("Missing Adafruit IO credentials. Set VITE_AIO_USERNAME and VITE_AIO_KEY.");
       return;
     }
 
@@ -1239,9 +1208,6 @@ export default function App() {
     });
   }, [subscriberConfig, feedTopics, limit]);
 
-  const saveSubscriberConfig = useCallback(() => {
-    localStorage.setItem(SUBSCRIBER_CONFIG_KEY, JSON.stringify(subscriberConfig));
-  }, [subscriberConfig]);
 
   useEffect(() => {
     setAnalytics(buildAnalytics(readings, analyticsDays));
@@ -1323,13 +1289,11 @@ export default function App() {
             {page === "subscriber" && (
               <SubscriberPage
                 config={subscriberConfig}
-                setConfig={setSubscriberConfig}
                 status={subscriberStatus}
                 topics={feedTopics}
                 messages={subscriberMessages}
                 error={subscriberError}
                 feeds={FEED_KEYS}
-                onSave={saveSubscriberConfig}
                 onConnect={connectSubscriber}
                 onDisconnect={disconnectSubscriber}
               />
