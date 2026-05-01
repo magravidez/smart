@@ -16,14 +16,14 @@ The current implementation uses MQTT Pub/Sub with Adafruit IO:
 
 ## Technology Stack
 
-| Category        | Technologies                                                                                                                                                                                                                                                |
-| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Node | |
-| Frontend        | |
-| UI              | |
-| Backend         | ![Node.js](https://img.shields.io/badge/Node.js-339933?style=flat&logo=node.js) ![Express](https://img.shields.io/badge/Express.js-000000?style=flat&logo=express) ![TypeScript](https://img.shields.io/badge/TypeScript-3178c6?style=flat&logo=typescript) |
-| Database        | ![NeonDB](https://img.shields.io/badge/NeonDB-database-blue)                                                                                                                                                                                                |
-| ORM             | ![Prisma](https://img.shields.io/badge/Prisma-3b82f6?style=flat&logo=prisma)                                                                                                                                                                                |
+| Category        | Technologies                                                                                                                                                                                                                                                                                               |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Hardware        | Arduino UNO R4 WiFi, DHT sensor (temperature/humidity)                                                                                                                                                                                                                                                       |
+| Messaging       | MQTT Pub/Sub, Adafruit IO                                                                                                                                                                                                                                                                                   |
+| Frontend        | ![React](https://img.shields.io/badge/React-61dafb?style=flat&logo=react&logoColor=000000) ![Vite](https://img.shields.io/badge/Vite-646cff?style=flat&logo=vite&logoColor=ffffff) ![Recharts](https://img.shields.io/badge/Recharts-22b4a8?style=flat) ![MQTT.js](https://img.shields.io/badge/MQTT.js-5e7bff?style=flat) |
+| Backend         | ![Node.js](https://img.shields.io/badge/Node.js-339933?style=flat&logo=node.js) ![Express](https://img.shields.io/badge/Express.js-000000?style=flat&logo=express) ![TypeScript](https://img.shields.io/badge/TypeScript-3178c6?style=flat&logo=typescript) ![MQTT.js](https://img.shields.io/badge/MQTT.js-5e7bff?style=flat) |
+| Database        | ![Neon](https://img.shields.io/badge/Neon-00e699?style=flat&logo=postgresql&logoColor=ffffff)                                                                                                                                                                                                                |
+| ORM             | ![Prisma](https://img.shields.io/badge/Prisma-3b82f6?style=flat&logo=prisma)                                                                                                                                                                                                                                   |
 
 ---
 
