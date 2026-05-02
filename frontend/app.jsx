@@ -36,10 +36,6 @@ const FONT_MONO    = "'JetBrains Mono', 'Courier New', monospace";
 const FONT_BODY    = "'DM Sans', sans-serif";
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
-const AIO_DEFAULT = {
-  username: import.meta.env.VITE_AIO_USERNAME || "",
-  key: import.meta.env.VITE_AIO_KEY || "",
-};
 const AIO_HOST = "wss://io.adafruit.com:443/mqtt";
 const FEED_KEYS = [
   "node-1-rhundei-city-humidity",
@@ -87,7 +83,6 @@ function fmtBucket(ts, mode) {
       hour12: false,
     });
   }
-
   return d.toLocaleDateString("en-PH", {
     month: "short",
     day: "2-digit",
@@ -212,8 +207,22 @@ function buildAnalytics(readings, days) {
   };
 }
 
-function loadSubscriberConfig() {
-  return AIO_DEFAULT;
+// ─── CREDENTIAL HELPERS ──────────────────────────────────────────────────────
+function loadSavedCredentials() {
+  return {
+    username: localStorage.getItem("aio_username") || "",
+    key: localStorage.getItem("aio_key") || "",
+  };
+}
+
+function saveCredentials(username, key) {
+  localStorage.setItem("aio_username", username);
+  localStorage.setItem("aio_key", key);
+}
+
+function clearCredentials() {
+  localStorage.removeItem("aio_username");
+  localStorage.removeItem("aio_key");
 }
 
 // ─── ICONS ───────────────────────────────────────────────────────────────────
@@ -282,6 +291,22 @@ const Icon = {
       <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/>
     </svg>
   ),
+  key: (
+    <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8">
+      <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>
+    </svg>
+  ),
+  check: (
+    <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+      <polyline points="20 6 9 17 4 12"/>
+    </svg>
+  ),
+  trash: (
+    <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8">
+      <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/>
+      <path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/>
+    </svg>
+  ),
 };
 
 // ─── GLOBAL STYLES ────────────────────────────────────────────────────────────
@@ -311,10 +336,20 @@ const globalStyle = `
   @keyframes spin {
     to { transform: rotate(360deg); }
   }
+  @keyframes slideDown {
+    from { opacity: 0; transform: translateY(-8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
 
   .fade-up { animation: fadeUp .5s ease both; }
   .fade-in { animation: fadeIn .4s ease both; }
   .new-row td { animation: flashRow 1.4s ease; }
+
+  input:focus {
+    outline: none;
+    border-color: #c97c2a !important;
+    box-shadow: 0 0 0 3px rgba(201,124,42,0.12);
+  }
 `;
 
 // ─── STAT CARD ────────────────────────────────────────────────────────────────
@@ -368,7 +403,6 @@ function NodeCard({ node, delay = 0 }) {
     onMouseEnter={e => { e.currentTarget.style.boxShadow = "0 4px 14px rgba(45,36,22,.10)"; e.currentTarget.style.transform = "translateY(-2px)"; }}
     onMouseLeave={e => { e.currentTarget.style.boxShadow = "0 1px 4px rgba(45,36,22,.06)"; e.currentTarget.style.transform = "translateY(0)"; }}
     >
-      {/* Top row */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start" }}>
           <div style={{ fontFamily: FONT_MONO, fontWeight: 600, fontSize: 13, color: C.brown }}>{node.node_id}</div>
@@ -388,7 +422,6 @@ function NodeCard({ node, delay = 0 }) {
         </div>
       </div>
 
-      {/* Readings */}
       <div style={{ display: "flex", gap: 14, alignItems: "stretch", justifyContent: "center" }}>
         <div style={{
           flex: "0 1 150px", background: "#fff3e6", border: `1px solid #f0d4b0`,
@@ -420,7 +453,6 @@ function NodeCard({ node, delay = 0 }) {
         </div>
       </div>
 
-      {/* Timestamp */}
       <div style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.textLt }}>
         Last reading · {fmtTime(node.timestamp)}
       </div>
@@ -429,13 +461,13 @@ function NodeCard({ node, delay = 0 }) {
 }
 
 // ─── SIDEBAR ──────────────────────────────────────────────────────────────────
-function Sidebar({ activePage, setActivePage, isOnline, lastUpdated }) {
+function Sidebar({ activePage, setActivePage, isOnline, lastUpdated, hasCredentials }) {
   const navItems = [
-    { id: "dashboard", label: "Dashboard",  icon: Icon.dashboard },
-    { id: "nodes",     label: "Node Overview", icon: Icon.nodes },
-    { id: "readings",  label: "All Readings",  icon: Icon.readings },
-    { id: "analytics", label: "Analytics", icon: Icon.analytics },
-    { id: "subscriber", label: "Custom Subscriber", icon: Icon.subscriber },
+    { id: "dashboard",  label: "Dashboard",         icon: Icon.dashboard },
+    { id: "nodes",      label: "Node Overview",      icon: Icon.nodes },
+    { id: "readings",   label: "All Readings",       icon: Icon.readings },
+    { id: "analytics",  label: "Analytics",          icon: Icon.analytics },
+    { id: "subscriber", label: "Custom Subscriber",  icon: Icon.subscriber },
   ];
 
   return (
@@ -493,6 +525,7 @@ function Sidebar({ activePage, setActivePage, isOnline, lastUpdated }) {
         </div>
         {navItems.map(item => {
           const active = activePage === item.id;
+          const needsBadge = item.id === "subscriber" && !hasCredentials;
           return (
             <button key={item.id}
               onClick={() => setActivePage(item.id)}
@@ -510,7 +543,24 @@ function Sidebar({ activePage, setActivePage, isOnline, lastUpdated }) {
             >
               <span style={{ opacity: active ? 1 : .6 }}>{item.icon}</span>
               {item.label}
-              {active && <span style={{ marginLeft: "auto", width: 4, height: 4, borderRadius: "50%", background: "#e8b870" }}/>}
+              {needsBadge && (
+                <span style={{
+                  marginLeft: "auto",
+                  background: "#c97c2a",
+                  color: "#fff",
+                  fontFamily: FONT_MONO,
+                  fontSize: 8,
+                  letterSpacing: 0.5,
+                  padding: "2px 5px",
+                  borderRadius: 4,
+                  lineHeight: 1.4,
+                }}>
+                  SETUP
+                </span>
+              )}
+              {active && !needsBadge && (
+                <span style={{ marginLeft: "auto", width: 4, height: 4, borderRadius: "50%", background: "#e8b870" }}/>
+              )}
             </button>
           );
         })}
@@ -586,14 +636,7 @@ function TrendCard({ title, color, series, keyName, bucketMode, unit }) {
   );
 }
 
-function AnalyticsPage({
-  analytics,
-  analyticsLoading,
-  analyticsError,
-  analyticsDays,
-  setAnalyticsDays,
-  onRefresh,
-}) {
+function AnalyticsPage({ analytics, analyticsLoading, analyticsError, analyticsDays, setAnalyticsDays, onRefresh }) {
   if (analyticsLoading && !analytics) return <Loader text="Loading analytics..." />;
 
   return (
@@ -627,15 +670,9 @@ function AnalyticsPage({
 
       {analyticsError && (
         <div style={{
-          marginBottom: 16,
-          fontFamily: FONT_MONO,
-          fontSize: 11,
-          color: C.clay,
-          background: "#fae8e8",
-          border: "1px solid #f0c0c0",
-          borderRadius: 8,
-          padding: "8px 10px",
-          width: "fit-content",
+          marginBottom: 16, fontFamily: FONT_MONO, fontSize: 11, color: C.clay,
+          background: "#fae8e8", border: "1px solid #f0c0c0",
+          borderRadius: 8, padding: "8px 10px", width: "fit-content",
         }}>
           Could not load analytics data.
         </div>
@@ -646,30 +683,15 @@ function AnalyticsPage({
       ) : (
         <>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(5,minmax(0,1fr))", gap: 14, marginBottom: 24 }}>
-            <StatCard label="Avg Temp" value={`${fmt(analytics.summary.temperature.avg)}°C`} sub="selected range" accent={C.amber} icon={Icon.temp} />
-            <StatCard label="Min Temp" value={`${fmt(analytics.summary.temperature.min)}°C`} sub="selected range" accent={C.brownMd} icon={Icon.temp} />
-            <StatCard label="Max Temp" value={`${fmt(analytics.summary.temperature.max)}°C`} sub="selected range" accent={C.clay} icon={Icon.temp} />
-            <StatCard label="Avg Humidity" value={`${fmt(analytics.summary.humidity.avg)}%`} sub="selected range" accent={C.sky} icon={Icon.humidity} />
-            <StatCard label="Samples" value={analytics.summary.samples} sub={`${analytics.range.bucket} buckets`} accent={C.sage} icon={Icon.readings} />
+            <StatCard label="Avg Temp"     value={`${fmt(analytics.summary.temperature.avg)}°C`} sub="selected range" accent={C.amber}  icon={Icon.temp} />
+            <StatCard label="Min Temp"     value={`${fmt(analytics.summary.temperature.min)}°C`} sub="selected range" accent={C.brownMd} icon={Icon.temp} />
+            <StatCard label="Max Temp"     value={`${fmt(analytics.summary.temperature.max)}°C`} sub="selected range" accent={C.clay}    icon={Icon.temp} />
+            <StatCard label="Avg Humidity" value={`${fmt(analytics.summary.humidity.avg)}%`}     sub="selected range" accent={C.sky}     icon={Icon.humidity} />
+            <StatCard label="Samples"      value={analytics.summary.samples}                      sub={`${analytics.range.bucket} buckets`} accent={C.sage} icon={Icon.readings} />
           </div>
-
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(300px,1fr))", gap: 16 }}>
-            <TrendCard
-              title="Temperature Trend"
-              color={C.amber}
-              series={analytics.series}
-              keyName="temperatureAvg"
-              bucketMode={analytics.range.bucket}
-              unit="°C"
-            />
-            <TrendCard
-              title="Humidity Trend"
-              color={C.sky}
-              series={analytics.series}
-              keyName="humidityAvg"
-              bucketMode={analytics.range.bucket}
-              unit="%"
-            />
+            <TrendCard title="Temperature Trend" color={C.amber} series={analytics.series} keyName="temperatureAvg" bucketMode={analytics.range.bucket} unit="°C" />
+            <TrendCard title="Humidity Trend"    color={C.sky}   series={analytics.series} keyName="humidityAvg"    bucketMode={analytics.range.bucket} unit="%" />
           </div>
         </>
       )}
@@ -688,25 +710,18 @@ function DashboardPage({ readings }) {
 
   return (
     <div className="fade-in">
-      {/* Page header */}
       <div style={{ marginBottom: 28 }}>
-        <h1 style={{ fontFamily: FONT_DISPLAY, fontSize: 30, fontWeight: 700, color: C.brown }}>
-          Farm Overview
-        </h1>
-        <p style={{ color: C.textMd, fontSize: 14, marginTop: 4 }}>
-          Real-time monitoring across all sensor nodes
-        </p>
+        <h1 style={{ fontFamily: FONT_DISPLAY, fontSize: 30, fontWeight: 700, color: C.brown }}>Farm Overview</h1>
+        <p style={{ color: C.textMd, fontSize: 14, marginTop: 4 }}>Real-time monitoring across all sensor nodes</p>
       </div>
 
-      {/* Stat cards */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 16, marginBottom: 32 }}>
-        <StatCard label="Total Readings" value={readings.length} sub="all nodes combined" accent={C.brown} delay={0} icon={Icon.readings} />
-        <StatCard label="Active Nodes"   value={nodes}           sub="transmitting data"  accent={C.sage}  delay={.07} icon={Icon.signal} />
-        <StatCard label="Avg Temperature" value={`${fmt(avgTemp)}°C`} sub="network average" accent={C.amber} delay={.14} icon={Icon.temp} />
-        <StatCard label="Avg Humidity"    value={`${fmt(avgHum)}%`}   sub="network average" accent={C.sky}   delay={.21} icon={Icon.humidity} />
+        <StatCard label="Total Readings"  value={readings.length}       sub="all nodes combined" accent={C.brown} delay={0}   icon={Icon.readings} />
+        <StatCard label="Active Nodes"    value={nodes}                  sub="transmitting data"  accent={C.sage}  delay={.07} icon={Icon.signal} />
+        <StatCard label="Avg Temperature" value={`${fmt(avgTemp)}°C`}   sub="network average"    accent={C.amber} delay={.14} icon={Icon.temp} />
+        <StatCard label="Avg Humidity"    value={`${fmt(avgHum)}%`}     sub="network average"    accent={C.sky}   delay={.21} icon={Icon.humidity} />
       </div>
 
-      {/* Node cards */}
       <div style={{ marginBottom: 12 }}>
         <h2 style={{ fontFamily: FONT_MONO, fontSize: 11, letterSpacing: 1.5, textTransform: "uppercase", color: C.textLt, marginBottom: 14 }}>
           Latest per Node
@@ -714,9 +729,7 @@ function DashboardPage({ readings }) {
         <div style={{
           display: "grid",
           gridTemplateColumns: "repeat(auto-fill,minmax(240px,1fr))",
-          gap: 16,
-          alignItems: "stretch",
-          gridAutoRows: "1fr",
+          gap: 16, alignItems: "stretch", gridAutoRows: "1fr",
         }}>
           {nodeList.map((n, i) => <NodeCard key={n.node_id} node={n} delay={i * .07} />)}
         </div>
@@ -770,11 +783,9 @@ function ReadingsPage({ readings, limit, setLimit, locationFilter, setLocationFi
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <select value={locationFilter} onChange={e => setLocationFilter(e.target.value)} style={{
-            fontFamily: FONT_MONO, fontSize: 12,
-            background: "#fff9f2", color: C.brown,
+            fontFamily: FONT_MONO, fontSize: 12, background: "#fff9f2", color: C.brown,
             border: `1px solid ${C.border}`, borderRadius: 8,
-            padding: "8px 14px", paddingRight: 20, cursor: "pointer", outline: "none",
-            marginTop: 6,
+            padding: "8px 14px", paddingRight: 20, cursor: "pointer", outline: "none", marginTop: 6,
           }}>
             <option>All Locations</option>
             <option>Rhundei City</option>
@@ -783,13 +794,10 @@ function ReadingsPage({ readings, limit, setLimit, locationFilter, setLocationFi
             <option>Nichole City</option>
             <option>Kloie City</option>
           </select>
-
           <select value={limit} onChange={e => setLimit(+e.target.value)} style={{
-            fontFamily: FONT_MONO, fontSize: 12,
-            background: "#fff9f2", color: C.brown,
+            fontFamily: FONT_MONO, fontSize: 12, background: "#fff9f2", color: C.brown,
             border: `1px solid ${C.border}`, borderRadius: 8,
-            padding: "8px 14px", paddingRight: 20, cursor: "pointer", outline: "none",
-            marginTop: 6,
+            padding: "8px 14px", paddingRight: 20, cursor: "pointer", outline: "none", marginTop: 6,
           }}>
             <option value={20}>Last 20</option>
             <option value={50}>Last 50</option>
@@ -799,10 +807,8 @@ function ReadingsPage({ readings, limit, setLimit, locationFilter, setLocationFi
       </div>
 
       <div style={{
-        background: "#fff9f2",
-        border: `1px solid ${C.border}`,
-        borderRadius: 16,
-        overflow: "hidden",
+        background: "#fff9f2", border: `1px solid ${C.border}`,
+        borderRadius: 16, overflow: "hidden",
         boxShadow: "0 1px 6px rgba(45,36,22,.06)",
       }}>
         <div style={{ overflowX: "auto" }}>
@@ -820,9 +826,7 @@ function ReadingsPage({ readings, limit, setLimit, locationFilter, setLocationFi
             </thead>
             <tbody>
               {readings.length === 0
-                ? (
-                  <tr><td colSpan={6}><Empty text="No readings found." /></td></tr>
-                )
+                ? <tr><td colSpan={6}><Empty text="No readings found." /></td></tr>
                 : readings.map((r, i) => (
                   <tr key={r.id}
                     className={r.id === newId ? "new-row" : ""}
@@ -855,212 +859,345 @@ function ReadingsPage({ readings, limit, setLimit, locationFilter, setLocationFi
   );
 }
 
-// ─── PAGE: CUSTOM SUBSCRIBER ────────────────────────────────────────────────
+// ─── PAGE: CUSTOM SUBSCRIBER ─────────────────────────────────────────────────
 function SubscriberPage({
-  config,
+  savedUsername,
+  savedKey,
+  onSaveAndConnect,
+  onDisconnect,
+  onClearCredentials,
   status,
   topics,
   messages,
   error,
   feeds,
-  onConnect,
-  onDisconnect,
 }) {
-  const canConnect = !!(config.username && config.key);
-  const maskedKey = config.key ? `${config.key.slice(0, 6)}...${config.key.slice(-4)}` : "—";
+  // Local form state — separate from the "active" credentials
+  const [formUser, setFormUser] = useState(savedUsername);
+  const [formKey,  setFormKey]  = useState(savedKey);
+  const [showKey,  setShowKey]  = useState(false);
+  const [saved,    setSaved]    = useState(false);
+
+  const isConnected   = status === "connected";
+  const isConnecting  = status === "connecting";
+  const hasCredentials = !!(savedUsername && savedKey);
+  const formChanged   = formUser !== savedUsername || formKey !== savedKey;
+  const canSubmit     = !!(formUser.trim() && formKey.trim());
+
+  function handleSaveConnect(e) {
+    e.preventDefault();
+    if (!canSubmit) return;
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+    onSaveAndConnect(formUser.trim(), formKey.trim());
+  }
+
+  function handleClear() {
+    setFormUser("");
+    setFormKey("");
+    onClearCredentials();
+  }
+
+  const inputStyle = {
+    fontFamily: FONT_MONO, fontSize: 12, color: C.text,
+    background: "#fff", border: `1px solid ${C.border}`,
+    borderRadius: 8, padding: "9px 12px", width: "100%",
+    transition: "border-color .15s, box-shadow .15s",
+  };
+
+  const labelStyle = {
+    fontFamily: FONT_MONO, fontSize: 10, letterSpacing: 1,
+    textTransform: "uppercase", color: C.textLt, marginBottom: 5, display: "block",
+  };
 
   return (
     <div className="fade-in">
+      {/* Header */}
       <div style={{ marginBottom: 24 }}>
-        <h1 style={{ fontFamily: FONT_DISPLAY, fontSize: 30, fontWeight: 700, color: C.brown }}>Custom Subscriber</h1>
+        <h1 style={{ fontFamily: FONT_DISPLAY, fontSize: 30, fontWeight: 700, color: C.brown }}>
+          Custom Subscriber
+        </h1>
         <p style={{ color: C.textMd, fontSize: 14, marginTop: 4 }}>
-          Live MQTT feed from Adafruit IO (broker) to this web client
+          Live MQTT feed from Adafruit IO directly to this browser
         </p>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))", gap: 16, marginBottom: 22 }}>
+      {/* No-credentials notice */}
+      {!hasCredentials && (
         <div style={{
-          background: "#fff9f2",
-          border: `1px solid ${C.border}`,
-          borderRadius: 16,
-          padding: "16px 18px",
+          animation: "slideDown .3s ease",
+          marginBottom: 20,
+          background: "#fff8ec",
+          border: `1px solid #f0d090`,
+          borderLeft: `4px solid ${C.amber}`,
+          borderRadius: 10,
+          padding: "14px 18px",
+          display: "flex", alignItems: "flex-start", gap: 12,
+        }}>
+          <span style={{ color: C.amber, marginTop: 1 }}>{Icon.key}</span>
+          <div>
+            <div style={{ fontFamily: FONT_MONO, fontSize: 11, fontWeight: 600, color: C.amber, marginBottom: 4 }}>
+              NO CREDENTIALS SAVED
+            </div>
+            <div style={{ fontFamily: FONT_BODY, fontSize: 13, color: C.textMd, lineHeight: 1.6 }}>
+              Enter your <strong>Adafruit IO username</strong> and <strong>AIO Key</strong> below and click
+              {" "}<strong>Save &amp; Connect</strong>. Credentials are stored only in your browser and never sent anywhere else.
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(320px,480px) 1fr", gap: 16, marginBottom: 22, alignItems: "start" }}>
+
+        {/* ── Credential Form ── */}
+        <div style={{
+          background: "#fff9f2", border: `1px solid ${C.border}`,
+          borderRadius: 16, padding: "22px 24px",
           boxShadow: "0 1px 6px rgba(45,36,22,.06)",
         }}>
-          <div style={{ fontFamily: FONT_MONO, fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: C.textLt, marginBottom: 10 }}>
-            Adafruit IO MQTT Config
+          <div style={{ fontFamily: FONT_MONO, fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: C.textLt, marginBottom: 18 }}>
+            Adafruit IO Credentials
           </div>
-          <div style={{ display: "grid", gap: 10 }}>
-            <div style={{ display: "grid", gap: 6 }}>
-              <span style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.textLt }}>Username</span>
-              <div style={{
-                fontFamily: FONT_MONO,
-                fontSize: 11,
-                color: C.textMd,
-                background: "#fff",
-                border: `1px solid ${C.border}`,
-                borderRadius: 8,
-                padding: "8px 10px",
-              }}>
-                {config.username || "—"}
+
+          <form onSubmit={handleSaveConnect}>
+            {/* Username */}
+            <div style={{ marginBottom: 14 }}>
+              <label style={labelStyle}>Username</label>
+              <input
+                type="text"
+                value={formUser}
+                onChange={e => setFormUser(e.target.value)}
+                placeholder="your-adafruit-username"
+                autoComplete="off"
+                spellCheck={false}
+                style={inputStyle}
+                disabled={isConnecting}
+              />
+            </div>
+
+            {/* AIO Key */}
+            <div style={{ marginBottom: 18 }}>
+              <label style={labelStyle}>AIO Key</label>
+              <div style={{ position: "relative" }}>
+                <input
+                  type={showKey ? "text" : "password"}
+                  value={formKey}
+                  onChange={e => setFormKey(e.target.value)}
+                  placeholder="aio_xxxxxxxxxxxxxxxxxxxx"
+                  autoComplete="off"
+                  spellCheck={false}
+                  style={{ ...inputStyle, paddingRight: 44 }}
+                  disabled={isConnecting}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowKey(v => !v)}
+                  style={{
+                    position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)",
+                    background: "none", border: "none", cursor: "pointer",
+                    color: C.textLt, padding: 4, lineHeight: 0,
+                  }}
+                >
+                  {showKey ? (
+                    <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8">
+                      <path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/>
+                      <path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/>
+                      <line x1="1" y1="1" x2="23" y2="23"/>
+                    </svg>
+                  ) : (
+                    <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8">
+                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+                    </svg>
+                  )}
+                </button>
+              </div>
+              <div style={{ fontFamily: FONT_MONO, fontSize: 9, color: C.textLt, marginTop: 5, lineHeight: 1.6 }}>
+                Find your AIO Key at{" "}
+                <a href="https://io.adafruit.com/api/docs/#authentication" target="_blank" rel="noopener noreferrer"
+                  style={{ color: C.amber, textDecoration: "none" }}>
+                  io.adafruit.com → My Key
+                </a>
+                . Stored in your browser only.
               </div>
             </div>
-            <div style={{ display: "grid", gap: 6 }}>
-              <span style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.textLt }}>AIO Key</span>
+
+            {/* Feed list (read-only) */}
+            <div style={{ marginBottom: 18 }}>
+              <label style={labelStyle}>Subscribed Feeds ({feeds.length})</label>
               <div style={{
-                fontFamily: FONT_MONO,
-                fontSize: 11,
-                color: C.textMd,
-                background: "#fff",
-                border: `1px solid ${C.border}`,
-                borderRadius: 8,
-                padding: "8px 10px",
+                background: C.bg2, border: `1px solid ${C.border}`,
+                borderRadius: 8, padding: "8px 10px",
+                maxHeight: 110, overflowY: "auto",
               }}>
-                {maskedKey}
-              </div>
-            </div>
-            <div style={{ display: "grid", gap: 6 }}>
-              <span style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.textLt }}>Feed Keys</span>
-              <div style={{
-                fontFamily: FONT_MONO,
-                fontSize: 10,
-                color: C.textMd,
-                background: "#fff",
-                border: `1px solid ${C.border}`,
-                borderRadius: 8,
-                padding: "8px 10px",
-                lineHeight: 1.6,
-              }}>
-                {feeds.map((feed) => (
-                  <div key={feed}>{feed}</div>
+                {feeds.map(f => (
+                  <div key={f} style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.textMd, lineHeight: 1.9 }}>{f}</div>
                 ))}
               </div>
             </div>
-          </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 14, flexWrap: "wrap" }}>
-            {status === "connected" ? (
-              <button
-                onClick={onDisconnect}
-                style={{
-                  fontFamily: FONT_MONO,
-                  fontSize: 11,
-                  color: "#fff",
-                  background: C.clay,
-                  border: "1px solid #8f2f16",
-                  borderRadius: 8,
-                  padding: "7px 12px",
-                  cursor: "pointer",
-                }}
-              >
-                Disconnect
-              </button>
-            ) : (
-              <button
-                onClick={onConnect}
-                disabled={!canConnect}
-                style={{
-                  fontFamily: FONT_MONO,
-                  fontSize: 11,
-                  color: canConnect ? "#fff" : "#b9a995",
-                  background: canConnect ? C.sage : C.bg3,
-                  border: `1px solid ${canConnect ? "#3a5a28" : C.border}`,
-                  borderRadius: 8,
-                  padding: "7px 12px",
-                  cursor: canConnect ? "pointer" : "not-allowed",
-                }}
-              >
-                Connect
-              </button>
-            )}
-            <span style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.textLt }}>
-              Topics: {topics.length ? topics.length : "—"}
-            </span>
-          </div>
+            {/* Buttons */}
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {isConnected ? (
+                <button
+                  type="button"
+                  onClick={onDisconnect}
+                  style={{
+                    fontFamily: FONT_MONO, fontSize: 11, color: "#fff",
+                    background: C.clay, border: "1px solid #8f2f16",
+                    borderRadius: 8, padding: "8px 14px", cursor: "pointer",
+                    transition: "opacity .15s",
+                  }}
+                >
+                  Disconnect
+                </button>
+              ) : (
+                <button
+                  type="submit"
+                  disabled={!canSubmit || isConnecting}
+                  style={{
+                    fontFamily: FONT_MONO, fontSize: 11,
+                    color: (canSubmit && !isConnecting) ? "#fff" : "#b9a995",
+                    background: saved ? C.sage : (canSubmit && !isConnecting) ? C.amber : C.bg3,
+                    border: `1px solid ${saved ? "#3a5a28" : (canSubmit && !isConnecting) ? "#a05c10" : C.border}`,
+                    borderRadius: 8, padding: "8px 14px",
+                    cursor: (canSubmit && !isConnecting) ? "pointer" : "not-allowed",
+                    display: "flex", alignItems: "center", gap: 6,
+                    transition: "background .2s, border-color .2s",
+                    minWidth: 130,
+                  }}
+                >
+                  {isConnecting ? (
+                    <>
+                      <span style={{ width: 10, height: 10, border: "1.5px solid #b9a995", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 1s linear infinite", display: "inline-block" }}/>
+                      Connecting…
+                    </>
+                  ) : saved ? (
+                    <>{Icon.check} Saved!</>
+                  ) : (
+                    <>{Icon.key} Save &amp; Connect</>
+                  )}
+                </button>
+              )}
+
+              {hasCredentials && !isConnected && !isConnecting && (
+                <button
+                  type="button"
+                  onClick={handleClear}
+                  style={{
+                    fontFamily: FONT_MONO, fontSize: 11, color: C.textLt,
+                    background: "transparent", border: `1px solid ${C.border}`,
+                    borderRadius: 8, padding: "8px 10px", cursor: "pointer",
+                    display: "flex", alignItems: "center", gap: 5,
+                    transition: "color .15s, border-color .15s",
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.color = C.clay; e.currentTarget.style.borderColor = C.clay; }}
+                  onMouseLeave={e => { e.currentTarget.style.color = C.textLt; e.currentTarget.style.borderColor = C.border; }}
+                >
+                  {Icon.trash} Clear
+                </button>
+              )}
+
+              {/* Reconnect with saved creds if form unchanged */}
+              {hasCredentials && !isConnected && !isConnecting && !formChanged && (
+                <button
+                  type="submit"
+                  style={{
+                    fontFamily: FONT_MONO, fontSize: 11, color: C.brownMd,
+                    background: C.bg2, border: `1px solid ${C.border}`,
+                    borderRadius: 8, padding: "8px 12px", cursor: "pointer",
+                    display: "flex", alignItems: "center", gap: 5,
+                  }}
+                >
+                  {Icon.refresh} Reconnect
+                </button>
+              )}
+            </div>
+          </form>
+
           {error && (
             <div style={{
-              marginTop: 10,
-              fontFamily: FONT_MONO,
-              fontSize: 10,
-              color: C.clay,
-              background: "#fae8e8",
-              border: "1px solid #f0c0c0",
-              borderRadius: 6,
-              padding: "6px 8px",
+              marginTop: 12, fontFamily: FONT_MONO, fontSize: 10, color: C.clay,
+              background: "#fae8e8", border: "1px solid #f0c0c0",
+              borderRadius: 6, padding: "8px 10px", lineHeight: 1.5,
             }}>
               {error}
             </div>
           )}
         </div>
 
+        {/* ── Connection Status ── */}
         <div style={{
-          background: "#fff9f2",
-          border: `1px solid ${C.border}`,
-          borderRadius: 16,
-          padding: "12px 14px",
+          background: "#fff9f2", border: `1px solid ${C.border}`,
+          borderRadius: 16, padding: "22px 24px",
           boxShadow: "0 1px 6px rgba(45,36,22,.06)",
-          display: "grid",
-          gap: 8,
-          alignSelf: "start",
-          width: "max-content",
+          display: "flex", flexDirection: "column", gap: 16,
         }}>
           <div style={{ fontFamily: FONT_MONO, fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: C.textLt }}>
             Connection Status
           </div>
+
+          {/* Status indicator */}
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <span style={{
-              width: 9,
-              height: 9,
-              borderRadius: "50%",
-              background: status === "connected" ? C.sage : status === "connecting" ? C.amber : C.clay,
-              boxShadow: `0 0 6px ${status === "connected" ? C.sage : status === "connecting" ? C.amber : C.clay}`,
+              width: 10, height: 10, borderRadius: "50%", flexShrink: 0,
+              background: isConnected ? C.sage : isConnecting ? C.amber : C.clay,
+              boxShadow: `0 0 8px ${isConnected ? C.sage : isConnecting ? C.amber : C.clay}`,
+              animation: isConnecting ? "pulse 1s infinite" : undefined,
             }} />
-            <span style={{ fontFamily: FONT_MONO, fontSize: 12, color: C.textMd }}>
+            <span style={{ fontFamily: FONT_MONO, fontSize: 13, fontWeight: 600, color: C.textMd }}>
               {status.toUpperCase()}
             </span>
           </div>
-          <div style={{
-            display: "grid",
-            gridTemplateColumns: "auto 1fr",
-            columnGap: 10,
-            rowGap: 4,
-            fontFamily: FONT_MONO,
-            fontSize: 11,
-            color: C.textLt,
-            alignItems: "center",
-          }}>
-            <div style={{ opacity: 0.8 }}>Broker</div>
-            <div style={{ color: C.textMd, wordBreak: "break-all" }}>{AIO_HOST}</div>
 
-            <div style={{ opacity: 0.8 }}>Messages</div>
+          {/* Info grid */}
+          <div style={{
+            display: "grid", gridTemplateColumns: "auto 1fr",
+            columnGap: 14, rowGap: 8,
+            fontFamily: FONT_MONO, fontSize: 11, color: C.textLt,
+          }}>
+            <div>Broker</div>
+            <div style={{ color: C.textMd, wordBreak: "break-all", fontSize: 10 }}>{AIO_HOST}</div>
+
+            <div>Account</div>
+            <div style={{ color: C.textMd }}>
+              {savedUsername
+                ? <span style={{ color: C.sage }}>{savedUsername}</span>
+                : <span style={{ color: C.textLt, fontStyle: "italic" }}>not set</span>}
+            </div>
+
+            <div>Topics</div>
+            <div style={{ color: C.textMd }}>{topics.length || "—"}</div>
+
+            <div>Messages</div>
             <div style={{ color: C.textMd }}>{messages.length}</div>
 
-            <div style={{ opacity: 0.8 }}>Last</div>
+            <div>Last msg</div>
             <div style={{ color: C.textMd }}>{messages[0]?.time ?? "—"}</div>
           </div>
+
           <div style={{
-            marginTop: 6,
-            fontFamily: FONT_BODY,
-            fontSize: 13,
-            color: C.textMd,
-            lineHeight: 1.5,
+            background: C.bg2, border: `1px solid ${C.border}`,
+            borderRadius: 8, padding: "10px 12px",
+            fontFamily: FONT_BODY, fontSize: 12, color: C.textMd, lineHeight: 1.6,
           }}>
-            This subscriber uses MQTT over WebSockets to connect directly to Adafruit IO.
+            💡 Credentials are saved in <strong>your browser only</strong> via localStorage. No env vars or repo access required. Each team member can use their own Adafruit IO account.
           </div>
         </div>
       </div>
 
+      {/* ── Live Feed Table ── */}
       <div style={{
-        background: "#fff9f2",
-        border: `1px solid ${C.border}`,
-        borderRadius: 16,
-        overflow: "hidden",
+        background: "#fff9f2", border: `1px solid ${C.border}`,
+        borderRadius: 16, overflow: "hidden",
         boxShadow: "0 1px 6px rgba(45,36,22,.06)",
       }}>
         <div style={{ padding: "14px 18px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ fontFamily: FONT_MONO, fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: C.textLt }}>
             Live Feed
           </div>
-          <div style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.textLt }}>{topics.length ? "Subscribed" : "Not connected"}</div>
+          <div style={{ fontFamily: FONT_MONO, fontSize: 10, color: isConnected ? C.sage : C.textLt }}>
+            {isConnected ? "● Subscribed" : "Not connected"}
+          </div>
         </div>
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -1077,14 +1214,14 @@ function SubscriberPage({
             </thead>
             <tbody>
               {messages.length === 0 ? (
-                <tr><td colSpan={6}><Empty text="No MQTT messages yet." /></td></tr>
+                <tr><td colSpan={6}>
+                  <Empty text={isConnected ? "Waiting for MQTT messages…" : "Connect above to see live data."} />
+                </td></tr>
               ) : messages.map(msg => (
                 <tr key={msg.id} style={{ borderBottom: `1px solid ${C.bg3}` }}>
                   <td style={{ padding: "10px 16px", fontFamily: FONT_MONO, fontSize: 11, color: C.textLt }}>{msg.time}</td>
                   <td style={{ padding: "10px 16px", fontFamily: FONT_MONO, fontSize: 11, color: C.textLt }}>{msg.feed}</td>
-                  <td style={{ padding: "10px 16px", fontFamily: FONT_MONO, fontSize: 12, color: C.brown }}>
-                    {msg.parsed?.node_id || "—"}
-                  </td>
+                  <td style={{ padding: "10px 16px", fontFamily: FONT_MONO, fontSize: 12, color: C.brown }}>{msg.parsed?.node_id || "—"}</td>
                   <td style={{ padding: "10px 16px", fontFamily: FONT_MONO, fontSize: 12, color: C.amber }}>
                     {msg.parsed?.temperature != null ? `${fmt(msg.parsed.temperature)} °C` : "—"}
                   </td>
@@ -1092,9 +1229,7 @@ function SubscriberPage({
                     {msg.parsed?.humidity != null ? `${fmt(msg.parsed.humidity)} %` : "—"}
                   </td>
                   <td style={{ padding: "10px 16px", fontFamily: FONT_BODY, fontSize: 12, color: C.textMd, maxWidth: 380 }}>
-                    <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                      {msg.text || "—"}
-                    </div>
+                    <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{msg.text || "—"}</div>
                   </td>
                 </tr>
               ))}
@@ -1129,24 +1264,30 @@ function Empty({ text }) {
 
 // ─── ROOT APP ─────────────────────────────────────────────────────────────────
 export default function App() {
-  const [page, setPage]         = useState("dashboard");
-  const [readings, setReadings] = useState([]);
+  const [page,           setPage]           = useState("dashboard");
+  const [readings,       setReadings]       = useState([]);
   const [locationFilter, setLocationFilter] = useState("All Locations");
-  const [analytics, setAnalytics] = useState(null);
-  const [analyticsDays, setAnalyticsDays] = useState(7);
-  const [lastUpdated, setLastUpdated] = useState(null);
-  const [limit, setLimit]       = useState(50);
-  const [subscriberConfig] = useState(loadSubscriberConfig);
-  const [subscriberStatus, setSubscriberStatus] = useState("disconnected");
-  const [subscriberError, setSubscriberError] = useState("");
-  const [subscriberMessages, setSubscriberMessages] = useState([]);
-  const subscriberRef = useRef(null);
-  const nodeMapRef = useRef({});
+  const [analytics,      setAnalytics]      = useState(null);
+  const [analyticsDays,  setAnalyticsDays]  = useState(7);
+  const [lastUpdated,    setLastUpdated]    = useState(null);
+  const [limit,          setLimit]          = useState(50);
 
-  const feedTopics = subscriberConfig.username
-    ? FEED_KEYS.map((feed) => `${subscriberConfig.username}/feeds/${feed}`)
+  // The "active" credentials used by the MQTT client
+  const [activeUsername, setActiveUsername] = useState(() => loadSavedCredentials().username);
+  const [activeKey,      setActiveKey]      = useState(() => loadSavedCredentials().key);
+
+  const [subscriberStatus,   setSubscriberStatus]   = useState("disconnected");
+  const [subscriberError,    setSubscriberError]    = useState("");
+  const [subscriberMessages, setSubscriberMessages] = useState([]);
+
+  const subscriberRef = useRef(null);
+  const nodeMapRef    = useRef({});
+
+  const feedTopics = activeUsername
+    ? FEED_KEYS.map(feed => `${activeUsername}/feeds/${feed}`)
     : [];
 
+  // ── Disconnect ──────────────────────────────────────────────────────────────
   const disconnectSubscriber = useCallback(() => {
     if (subscriberRef.current) {
       subscriberRef.current.end(true);
@@ -1155,23 +1296,32 @@ export default function App() {
     setSubscriberStatus("disconnected");
   }, []);
 
-  const connectSubscriber = useCallback(() => {
-    if (!subscriberConfig.username || !subscriberConfig.key) {
-      setSubscriberError("Missing Adafruit IO credentials. Set VITE_AIO_USERNAME and VITE_AIO_KEY.");
+  // ── Connect ─────────────────────────────────────────────────────────────────
+  const connectSubscriber = useCallback((username, key) => {
+    const user = username ?? activeUsername;
+    const aioKey = key ?? activeKey;
+
+    if (!user || !aioKey) {
+      setSubscriberError("Enter your Adafruit IO username and key, then click Save & Connect.");
       return;
     }
 
-    if (subscriberRef.current) return;
+    if (subscriberRef.current) {
+      subscriberRef.current.end(true);
+      subscriberRef.current = null;
+    }
 
     setSubscriberError("");
     setSubscriberStatus("connecting");
 
+    const topics = FEED_KEYS.map(feed => `${user}/feeds/${feed}`);
+
     const client = mqtt.connect(AIO_HOST, {
-      username: subscriberConfig.username,
-      password: subscriberConfig.key,
+      username: user,
+      password: aioKey,
       clientId: `smart-web-${Math.random().toString(16).slice(2, 10)}`,
       keepalive: 30,
-      reconnectPeriod: 2000,
+      reconnectPeriod: 0,      // manual reconnect only
       connectTimeout: 8000,
       clean: true,
     });
@@ -1179,12 +1329,13 @@ export default function App() {
     subscriberRef.current = client;
 
     client.on("connect", () => {
-      client.subscribe(feedTopics, { qos: 0 }, (err) => {
+      client.subscribe(topics, { qos: 0 }, (err) => {
         if (err) {
-          setSubscriberError("Failed to subscribe to feeds.");
+          setSubscriberError("Connected but failed to subscribe to feeds.");
           setSubscriberStatus("disconnected");
         } else {
           setSubscriberStatus("connected");
+          setSubscriberError("");
         }
       });
     });
@@ -1199,59 +1350,57 @@ export default function App() {
       const metricKey = meta.metric.includes("temp") ? "temperature" : "humidity";
       const nowMs = Date.now();
 
-      const prevMap = nodeMapRef.current;
+      const prevMap  = nodeMapRef.current;
       const prevNode = prevMap[meta.nodeId] || { node_id: meta.nodeId, location: meta.location };
       const nextNodeBase = {
         ...prevNode,
-        node_id: meta.nodeId,
-        location: meta.location || prevNode.location,
-        [metricKey]: value,
+        node_id:      meta.nodeId,
+        location:     meta.location || prevNode.location,
+        [metricKey]:  value,
         lastTempText: metricKey === "temperature" ? text : prevNode.lastTempText,
-        lastHumText: metricKey === "humidity" ? text : prevNode.lastHumText,
-        lastTempAt: metricKey === "temperature" ? nowMs : prevNode.lastTempAt,
-        lastHumAt: metricKey === "humidity" ? nowMs : prevNode.lastHumAt,
+        lastHumText:  metricKey === "humidity"    ? text : prevNode.lastHumText,
+        lastTempAt:   metricKey === "temperature" ? nowMs : prevNode.lastTempAt,
+        lastHumAt:    metricKey === "humidity"    ? nowMs : prevNode.lastHumAt,
       };
       const lastEmitAt = prevNode.lastEmitAt ?? 0;
-      const hasTemp = nextNodeBase.temperature != null;
-      const hasHum = nextNodeBase.humidity != null;
-      const tempFresh = nextNodeBase.lastTempAt && nextNodeBase.lastTempAt > lastEmitAt;
-      const humFresh = nextNodeBase.lastHumAt && nextNodeBase.lastHumAt > lastEmitAt;
+      const hasTemp    = nextNodeBase.temperature != null;
+      const hasHum     = nextNodeBase.humidity    != null;
+      const tempFresh  = nextNodeBase.lastTempAt && nextNodeBase.lastTempAt > lastEmitAt;
+      const humFresh   = nextNodeBase.lastHumAt  && nextNodeBase.lastHumAt  > lastEmitAt;
       const shouldEmit = hasTemp && hasHum && tempFresh && humFresh;
 
       if (shouldEmit) {
-        const emitAt = Math.max(nextNodeBase.lastTempAt, nextNodeBase.lastHumAt);
+        const emitAt    = Math.max(nextNodeBase.lastTempAt, nextNodeBase.lastHumAt);
         const timestamp = new Date(emitAt).toISOString();
-        const nextNode = { ...nextNodeBase, lastEmitAt: emitAt, timestamp };
+        const nextNode  = { ...nextNodeBase, lastEmitAt: emitAt, timestamp };
         nodeMapRef.current = { ...prevMap, [meta.nodeId]: nextNode };
 
-        setReadings((prevReadings) => {
+        setReadings(prevReadings => {
           const nextReading = {
-            id: emitAt,
-            node_id: nextNode.node_id,
-            location: nextNode.location || "Unknown",
+            id:          emitAt,
+            node_id:     nextNode.node_id,
+            location:    nextNode.location || "Unknown",
             temperature: nextNode.temperature ?? null,
-            humidity: nextNode.humidity ?? null,
-            timestamp: nextNode.timestamp,
+            humidity:    nextNode.humidity    ?? null,
+            timestamp:   nextNode.timestamp,
           };
-          const updated = [nextReading, ...prevReadings];
-          return updated.slice(0, Math.max(100, limit));
+          return [nextReading, ...prevReadings].slice(0, Math.max(100, limit));
         });
 
         const combinedText = [nextNode.lastTempText, nextNode.lastHumText].filter(Boolean).join(" | ");
-        setSubscriberMessages((prev) => {
+        setSubscriberMessages(prev => {
           const parsed = {
-            node_id: nextNode.node_id,
+            node_id:     nextNode.node_id,
             temperature: nextNode.temperature,
-            humidity: nextNode.humidity,
+            humidity:    nextNode.humidity,
           };
-          const next = [{
-            id: `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
-            time: new Date().toLocaleTimeString("en-PH", { hour12: false }),
+          return [{
+            id:     `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+            time:   new Date().toLocaleTimeString("en-PH", { hour12: false }),
             feed,
-            text: combinedText || text,
+            text:   combinedText || text,
             parsed,
-          }, ...prev];
-          return next.slice(0, 50);
+          }, ...prev].slice(0, 50);
         });
       } else {
         nodeMapRef.current = { ...prevMap, [meta.nodeId]: nextNodeBase };
@@ -1261,32 +1410,65 @@ export default function App() {
     });
 
     client.on("error", (err) => {
-      setSubscriberError(err?.message || "MQTT connection error.");
+      const msg = err?.message || "";
+      const isAuth = msg.toLowerCase().includes("not authorized") || msg.includes("4");
+      setSubscriberError(
+        isAuth
+          ? "Authentication failed. Check your username and AIO Key."
+          : `Connection error: ${msg || "Unknown error."}`
+      );
       setSubscriberStatus("disconnected");
       client.end(true);
       subscriberRef.current = null;
     });
 
     client.on("close", () => {
-      setSubscriberStatus("disconnected");
-      subscriberRef.current = null;
+      if (subscriberRef.current === client) {
+        setSubscriberStatus("disconnected");
+        subscriberRef.current = null;
+      }
     });
-  }, [subscriberConfig, feedTopics, limit]);
+  }, [activeUsername, activeKey, limit]);
 
+  // ── Save & Connect (called from SubscriberPage form) ─────────────────────
+  const handleSaveAndConnect = useCallback((username, key) => {
+    saveCredentials(username, key);
+    setActiveUsername(username);
+    setActiveKey(key);
+    disconnectSubscriber();
+    // connectSubscriber with new values directly (state update is async)
+    setTimeout(() => connectSubscriber(username, key), 50);
+  }, [disconnectSubscriber, connectSubscriber]);
 
+  // ── Clear credentials ─────────────────────────────────────────────────────
+  const handleClearCredentials = useCallback(() => {
+    clearCredentials();
+    setActiveUsername("");
+    setActiveKey("");
+    disconnectSubscriber();
+    setSubscriberError("");
+  }, [disconnectSubscriber]);
+
+  // ── Auto-connect on load if credentials exist ─────────────────────────────
+  useEffect(() => {
+    if (activeUsername && activeKey && subscriberStatus === "disconnected") {
+      connectSubscriber(activeUsername, activeKey);
+    }
+    // only on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Analytics ─────────────────────────────────────────────────────────────
   useEffect(() => {
     setAnalytics(buildAnalytics(readings, analyticsDays));
   }, [readings, analyticsDays]);
 
+  // ── Cleanup ───────────────────────────────────────────────────────────────
   useEffect(() => () => disconnectSubscriber(), [disconnectSubscriber]);
 
-  useEffect(() => {
-    if (subscriberStatus === "connected" || subscriberStatus === "connecting") return;
-    if (!subscriberConfig.username || !subscriberConfig.key) return;
-    connectSubscriber();
-  }, [subscriberConfig, subscriberStatus, connectSubscriber]);
+  const mqttOnline      = subscriberStatus === "connected";
+  const hasCredentials  = !!(activeUsername && activeKey);
 
-  const mqttOnline = subscriberStatus === "connected";
   function normalizeLocation(s) {
     return (s || "").toString().trim().toLowerCase().replace(/_/g, " ");
   }
@@ -1301,7 +1483,13 @@ export default function App() {
     <>
       <style>{globalStyle}</style>
       <div style={{ display: "flex", minHeight: "100vh", background: C.bg }}>
-        <Sidebar activePage={page} setActivePage={setPage} isOnline={mqttOnline} lastUpdated={lastUpdated} />
+        <Sidebar
+          activePage={page}
+          setActivePage={setPage}
+          isOnline={mqttOnline}
+          lastUpdated={lastUpdated}
+          hasCredentials={hasCredentials}
+        />
 
         {/* Main content */}
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
@@ -1313,34 +1501,45 @@ export default function App() {
             display: "flex", alignItems: "center", justifyContent: "space-between",
           }}>
             <div style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.textLt, letterSpacing: .5 }}>
-              {page === "dashboard"
-                ? "// overview"
-                : page === "nodes"
-                ? "// node status"
-                : page === "readings"
-                ? "// readings log"
-                : page === "analytics"
-                ? "// analytics"
-                : "// mqtt subscriber"}
+              {page === "dashboard"  ? "// overview"
+              : page === "nodes"     ? "// node status"
+              : page === "readings"  ? "// readings log"
+              : page === "analytics" ? "// analytics"
+              :                        "// mqtt subscriber"}
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               {!mqttOnline && (
-                <span style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.clay, background: "#fae8e8", border: "1px solid #f0c0c0", borderRadius: 6, padding: "3px 10px" }}>
-                  ⚠ MQTT disconnected
-                </span>
+                <button
+                  onClick={() => setPage("subscriber")}
+                  style={{
+                    fontFamily: FONT_MONO, fontSize: 11, color: C.amber,
+                    background: "#fff8ec", border: "1px solid #f0d090",
+                    borderRadius: 6, padding: "3px 10px",
+                    cursor: "pointer", transition: "background .15s",
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = "#fff0d0"}
+                  onMouseLeave={e => e.currentTarget.style.background = "#fff8ec"}
+                  title="Go to Custom Subscriber to connect"
+                >
+                  ⚠ MQTT disconnected — {hasCredentials ? "reconnect?" : "set up credentials →"}
+                </button>
               )}
-              <button onClick={connectSubscriber} style={{
-                display: "flex", alignItems: "center", gap: 6,
-                fontFamily: FONT_MONO, fontSize: 11, color: C.brownMd,
-                background: C.bg2, border: `1px solid ${C.border}`,
-                borderRadius: 8, padding: "6px 12px", cursor: "pointer",
-                transition: "background .15s",
-              }}
-              onMouseEnter={e => e.currentTarget.style.background = C.bg3}
-              onMouseLeave={e => e.currentTarget.style.background = C.bg2}
-              >
-                {Icon.refresh} Refresh
-              </button>
+              {mqttOnline && (
+                <button
+                  onClick={() => connectSubscriber(activeUsername, activeKey)}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 6,
+                    fontFamily: FONT_MONO, fontSize: 11, color: C.brownMd,
+                    background: C.bg2, border: `1px solid ${C.border}`,
+                    borderRadius: 8, padding: "6px 12px", cursor: "pointer",
+                    transition: "background .15s",
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = C.bg3}
+                  onMouseLeave={e => e.currentTarget.style.background = C.bg2}
+                >
+                  {Icon.refresh} Refresh
+                </button>
+              )}
             </div>
           </div>
 
@@ -1369,14 +1568,16 @@ export default function App() {
             )}
             {page === "subscriber" && (
               <SubscriberPage
-                config={subscriberConfig}
+                savedUsername={activeUsername}
+                savedKey={activeKey}
+                onSaveAndConnect={handleSaveAndConnect}
+                onDisconnect={disconnectSubscriber}
+                onClearCredentials={handleClearCredentials}
                 status={subscriberStatus}
                 topics={feedTopics}
                 messages={subscriberMessages}
                 error={subscriberError}
                 feeds={FEED_KEYS}
-                onConnect={connectSubscriber}
-                onDisconnect={disconnectSubscriber}
               />
             )}
           </div>
