@@ -35,6 +35,21 @@ const FONT_DISPLAY = "'Playfair Display', Georgia, serif"
 const FONT_MONO = "'JetBrains Mono', 'Courier New', monospace"
 const FONT_BODY = "'DM Sans', sans-serif"
 
+function useWindowWidth() {
+  const [width, setWidth] = useState(() =>
+    typeof window !== "undefined" ? window.innerWidth : 1024
+  )
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined
+    const handleResize = () => setWidth(window.innerWidth)
+    window.addEventListener("resize", handleResize)
+    return () => window.removeEventListener("resize", handleResize)
+  }, [])
+
+  return width
+}
+
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 const AIO_HOST = "wss://io.adafruit.com:443/mqtt"
 const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL || "").replace(
@@ -813,7 +828,7 @@ const globalStyle = `
 `
 
 // ─── STAT CARD ────────────────────────────────────────────────────────────────
-function StatCard({ label, value, sub, accent, delay = 0, icon }) {
+function StatCard({ label, value, sub, accent, delay = 0, icon, isMobile }) {
   return (
     <div
       className="fade-up"
@@ -861,7 +876,7 @@ function StatCard({ label, value, sub, accent, delay = 0, icon }) {
       <div
         style={{
           fontFamily: FONT_DISPLAY,
-          fontSize: 32,
+          fontSize: isMobile ? "clamp(22px, 6vw, 28px)" : 32,
           fontWeight: 700,
           color: accent,
           lineHeight: 1.1,
@@ -875,7 +890,7 @@ function StatCard({ label, value, sub, accent, delay = 0, icon }) {
 }
 
 // ─── NODE CARD ────────────────────────────────────────────────────────────────
-function NodeCard({ node, delay = 0 }) {
+function NodeCard({ node, delay = 0, isMobile }) {
   return (
     <div
       className="fade-up"
@@ -970,22 +985,24 @@ function NodeCard({ node, delay = 0 }) {
       <div
         style={{
           display: "flex",
-          gap: 14,
+          gap: isMobile ? 10 : 14,
           alignItems: "stretch",
           justifyContent: "center",
+          flexWrap: "nowrap",
         }}
       >
         <div
           style={{
-            flex: "0 1 150px",
+            flex: isMobile ? "1 1 120px" : "0 1 150px",
             background: "#fff3e6",
             border: `1px solid #f0d4b0`,
             borderRadius: 10,
-            padding: "12px 16px",
+            padding: isMobile ? "10px 12px" : "12px 16px",
             display: "flex",
             flexDirection: "column",
             justifyContent: "space-between",
             minHeight: 82,
+            minWidth: 0,
           }}
         >
           <div
@@ -1012,7 +1029,7 @@ function NodeCard({ node, delay = 0 }) {
           <div
             style={{
               fontFamily: FONT_DISPLAY,
-              fontSize: 28,
+              fontSize: isMobile ? "clamp(20px, 6vw, 26px)" : 28,
               fontWeight: 700,
               color: C.amber,
               lineHeight: 1,
@@ -1027,15 +1044,16 @@ function NodeCard({ node, delay = 0 }) {
         </div>
         <div
           style={{
-            flex: "0 1 150px",
+            flex: isMobile ? "1 1 120px" : "0 1 150px",
             background: "#e8f2fa",
             border: `1px solid #b0d0e8`,
             borderRadius: 10,
-            padding: "12px 16px",
+            padding: isMobile ? "10px 12px" : "12px 16px",
             display: "flex",
             flexDirection: "column",
             justifyContent: "space-between",
             minHeight: 82,
+            minWidth: 0,
           }}
         >
           <div
@@ -1062,7 +1080,7 @@ function NodeCard({ node, delay = 0 }) {
           <div
             style={{
               fontFamily: FONT_DISPLAY,
-              fontSize: 28,
+              fontSize: isMobile ? "clamp(20px, 6vw, 26px)" : 28,
               fontWeight: 700,
               color: C.sky,
               lineHeight: 1,
@@ -1223,6 +1241,7 @@ function Sidebar({
                 alignItems: "center",
                 gap: 10,
                 padding: "10px 14px",
+                minHeight: 44,
                 border: "none",
                 borderRadius: 10,
                 cursor: "pointer",
@@ -1296,7 +1315,84 @@ function Sidebar({
   )
 }
 
-function TrendCard({ title, color, series, keyName, bucketMode, unit }) {
+function BottomNav({ activePage, setActivePage, hasCredentials }) {
+  const navItems = [
+    { id: "dashboard", label: "Dashboard", icon: Icon.dashboard },
+    { id: "nodes", label: "Nodes", icon: Icon.nodes },
+    { id: "readings", label: "Readings", icon: Icon.readings },
+    { id: "analytics", label: "Analytics", icon: Icon.analytics },
+    { id: "subscriber", label: "Subscriber", icon: Icon.subscriber },
+  ]
+
+  return (
+    <nav
+      style={{
+        position: "fixed",
+        left: 0,
+        right: 0,
+        bottom: 0,
+        height: 64,
+        background: C.sidebar,
+        borderTop: "1px solid #3d3020",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-around",
+        zIndex: 20,
+      }}
+    >
+      {navItems.map((item) => {
+        const active = activePage === item.id
+        const needsBadge = item.id === "subscriber" && !hasCredentials
+        return (
+          <button
+            key={item.id}
+            onClick={() => setActivePage(item.id)}
+            style={{
+              flex: 1,
+              height: "100%",
+              minHeight: 44,
+              background: "transparent",
+              border: "none",
+              color: active ? "#e8b870" : C.sideText,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: "pointer",
+              position: "relative",
+            }}
+            aria-label={item.label}
+            title={item.label}
+          >
+            <span style={{ opacity: active ? 1 : 0.7 }}>{item.icon}</span>
+            {needsBadge && (
+              <span
+                style={{
+                  position: "absolute",
+                  top: 12,
+                  right: "32%",
+                  width: 6,
+                  height: 6,
+                  borderRadius: "50%",
+                  background: C.amber,
+                }}
+              />
+            )}
+          </button>
+        )
+      })}
+    </nav>
+  )
+}
+
+function TrendCard({
+  title,
+  color,
+  series,
+  keyName,
+  bucketMode,
+  unit,
+  isMobile,
+}) {
   return (
     <div
       style={{
@@ -1305,7 +1401,7 @@ function TrendCard({ title, color, series, keyName, bucketMode, unit }) {
         borderRadius: 16,
         padding: "16px 16px 10px",
         boxShadow: "0 1px 6px rgba(45,36,22,.06)",
-        minHeight: 300,
+        minHeight: isMobile ? 220 : 300,
       }}
     >
       <div
@@ -1331,7 +1427,7 @@ function TrendCard({ title, color, series, keyName, bucketMode, unit }) {
           {series.length} buckets
         </div>
       </div>
-      <div style={{ width: "100%", height: 250 }}>
+      <div style={{ width: "100%", height: isMobile ? 220 : 250 }}>
         <ResponsiveContainer>
           <LineChart
             data={series}
@@ -1497,6 +1593,8 @@ function AnalyticsPage({
   analyticsDays,
   setAnalyticsDays,
   onRefresh,
+  isMobile,
+  isNarrow,
 }) {
   if (analyticsLoading && !analytics)
     return <Loader text="Loading analytics..." />
@@ -1529,7 +1627,14 @@ function AnalyticsPage({
             and predictive reporting
           </p>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            flexWrap: isMobile ? "wrap" : "nowrap",
+          }}
+        >
           <select
             value={analyticsDays}
             onChange={(e) => setAnalyticsDays(+e.target.value)}
@@ -1543,6 +1648,7 @@ function AnalyticsPage({
               padding: "8px 14px",
               cursor: "pointer",
               outline: "none",
+              minHeight: isMobile ? 44 : undefined,
             }}
           >
             <option value={1}>Last 24 Hours</option>
@@ -1563,6 +1669,7 @@ function AnalyticsPage({
               borderRadius: 8,
               padding: "7px 12px",
               cursor: "pointer",
+              minHeight: 44,
             }}
           >
             {Icon.refresh} Refresh
@@ -1595,7 +1702,9 @@ function AnalyticsPage({
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(5,minmax(0,1fr))",
+              gridTemplateColumns: isMobile
+                ? "repeat(2,minmax(0,1fr))"
+                : "repeat(5,minmax(0,1fr))",
               gap: 14,
               marginBottom: 24,
             }}
@@ -1606,6 +1715,7 @@ function AnalyticsPage({
               sub="selected range"
               accent={C.amber}
               icon={Icon.temp}
+              isMobile={isMobile}
             />
             <StatCard
               label="Min Temp"
@@ -1613,6 +1723,7 @@ function AnalyticsPage({
               sub="selected range"
               accent={C.brownMd}
               icon={Icon.temp}
+              isMobile={isMobile}
             />
             <StatCard
               label="Max Temp"
@@ -1620,6 +1731,7 @@ function AnalyticsPage({
               sub="selected range"
               accent={C.clay}
               icon={Icon.temp}
+              isMobile={isMobile}
             />
             <StatCard
               label="Avg Humidity"
@@ -1627,6 +1739,7 @@ function AnalyticsPage({
               sub="selected range"
               accent={C.sky}
               icon={Icon.humidity}
+              isMobile={isMobile}
             />
             <StatCard
               label="Samples"
@@ -1634,12 +1747,15 @@ function AnalyticsPage({
               sub={`${analytics.range.bucket} buckets from Supabase`}
               accent={C.sage}
               icon={Icon.readings}
+              isMobile={isMobile}
             />
           </div>
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fit,minmax(300px,1fr))",
+              gridTemplateColumns: isMobile
+                ? "1fr"
+                : "repeat(auto-fit,minmax(300px,1fr))",
               gap: 16,
               marginBottom: 24,
             }}
@@ -1651,6 +1767,7 @@ function AnalyticsPage({
               keyName="temperatureAvg"
               bucketMode={analytics.range.bucket}
               unit="°C"
+              isMobile={isMobile}
             />
             <TrendCard
               title="Humidity Trend"
@@ -1659,6 +1776,7 @@ function AnalyticsPage({
               keyName="humidityAvg"
               bucketMode={analytics.range.bucket}
               unit="%"
+              isMobile={isMobile}
             />
           </div>
           <div style={{ display: "grid", gap: 16 }}>
@@ -1669,7 +1787,11 @@ function AnalyticsPage({
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))",
+                  gridTemplateColumns: isNarrow
+                    ? "1fr"
+                    : isMobile
+                      ? "repeat(2,minmax(0,1fr))"
+                      : "repeat(auto-fit,minmax(180px,1fr))",
                   gap: 12,
                   marginBottom: 16,
                 }}
@@ -1703,7 +1825,11 @@ function AnalyticsPage({
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))",
+                  gridTemplateColumns: isNarrow
+                    ? "1fr"
+                    : isMobile
+                      ? "repeat(2,minmax(0,1fr))"
+                      : "repeat(auto-fit,minmax(180px,1fr))",
                   gap: 12,
                   marginBottom: 16,
                 }}
@@ -1742,7 +1868,11 @@ function AnalyticsPage({
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))",
+                  gridTemplateColumns: isNarrow
+                    ? "1fr"
+                    : isMobile
+                      ? "repeat(2,minmax(0,1fr))"
+                      : "repeat(auto-fit,minmax(180px,1fr))",
                   gap: 12,
                   marginBottom: 16,
                 }}
@@ -1776,7 +1906,7 @@ function AnalyticsPage({
 }
 
 // ─── PAGE: DASHBOARD ──────────────────────────────────────────────────────────
-function DashboardPage({ readings }) {
+function DashboardPage({ readings, isMobile, isTablet }) {
   if (!readings) return <Loader text="Loading dashboard…" />
 
   const nodes = new Set(readings.map((r) => r.node_id)).size
@@ -1809,7 +1939,11 @@ function DashboardPage({ readings }) {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(4,1fr)",
+          gridTemplateColumns: isMobile
+            ? "1fr"
+            : isTablet
+              ? "repeat(2,minmax(0,1fr))"
+              : "repeat(4,1fr)",
           gap: 16,
           marginBottom: 32,
         }}
@@ -1821,6 +1955,7 @@ function DashboardPage({ readings }) {
           accent={C.brown}
           delay={0}
           icon={Icon.readings}
+          isMobile={isMobile}
         />
         <StatCard
           label="Active Nodes"
@@ -1829,6 +1964,7 @@ function DashboardPage({ readings }) {
           accent={C.sage}
           delay={0.07}
           icon={Icon.signal}
+          isMobile={isMobile}
         />
         <StatCard
           label="Avg Temperature"
@@ -1837,6 +1973,7 @@ function DashboardPage({ readings }) {
           accent={C.amber}
           delay={0.14}
           icon={Icon.temp}
+          isMobile={isMobile}
         />
         <StatCard
           label="Avg Humidity"
@@ -1845,6 +1982,7 @@ function DashboardPage({ readings }) {
           accent={C.sky}
           delay={0.21}
           icon={Icon.humidity}
+          isMobile={isMobile}
         />
       </div>
 
@@ -1864,14 +2002,21 @@ function DashboardPage({ readings }) {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fill,minmax(240px,1fr))",
+            gridTemplateColumns: isMobile
+              ? "1fr"
+              : "repeat(auto-fill,minmax(240px,1fr))",
             gap: 16,
             alignItems: "stretch",
             gridAutoRows: "1fr",
           }}
         >
           {nodeList.map((n, i) => (
-            <NodeCard key={n.node_id} node={n} delay={i * 0.07} />
+            <NodeCard
+              key={n.node_id}
+              node={n}
+              delay={i * 0.07}
+              isMobile={isMobile}
+            />
           ))}
         </div>
       </div>
@@ -1880,7 +2025,7 @@ function DashboardPage({ readings }) {
 }
 
 // ─── PAGE: NODES ──────────────────────────────────────────────────────────────
-function NodesPage({ readings }) {
+function NodesPage({ readings, isMobile }) {
   if (!readings) return <Loader text="Loading nodes…" />
   const nodeList = getLatestPerNode(readings)
 
@@ -1907,12 +2052,19 @@ function NodesPage({ readings }) {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fill,minmax(260px,1fr))",
+            gridTemplateColumns: isMobile
+              ? "1fr"
+              : "repeat(auto-fill,minmax(260px,1fr))",
             gap: 18,
           }}
         >
           {nodeList.map((n, i) => (
-            <NodeCard key={n.node_id} node={n} delay={i * 0.08} />
+            <NodeCard
+              key={n.node_id}
+              node={n}
+              delay={i * 0.08}
+              isMobile={isMobile}
+            />
           ))}
         </div>
       )}
@@ -1927,6 +2079,7 @@ function ReadingsPage({
   setLimit,
   locationFilter,
   setLocationFilter,
+  isMobile,
 }) {
   const [prevFirstId, setPrevFirstId] = useState(null)
   const [newId, setNewId] = useState(null)
@@ -1948,6 +2101,8 @@ function ReadingsPage({
           alignItems: "flex-start",
           justifyContent: "space-between",
           marginBottom: 28,
+          flexWrap: isMobile ? "wrap" : "nowrap",
+          gap: isMobile ? 12 : 0,
         }}
       >
         <div>
@@ -1965,7 +2120,15 @@ function ReadingsPage({
             Sensor data log, latest first
           </p>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            flexWrap: isMobile ? "wrap" : "nowrap",
+            width: isMobile ? "100%" : "auto",
+          }}
+        >
           <select
             value={locationFilter}
             onChange={(e) => setLocationFilter(e.target.value)}
@@ -1981,6 +2144,7 @@ function ReadingsPage({
               cursor: "pointer",
               outline: "none",
               marginTop: 6,
+              minHeight: isMobile ? 44 : undefined,
             }}
           >
             <option>All Locations</option>
@@ -2005,6 +2169,7 @@ function ReadingsPage({
               cursor: "pointer",
               outline: "none",
               marginTop: 6,
+              minHeight: isMobile ? 44 : undefined,
             }}
           >
             <option value={20}>Last 20</option>
@@ -2173,6 +2338,7 @@ function SubscriberPage({
   messages,
   error,
   feeds,
+  isMobile,
 }) {
   // Local form state — separate from the "active" credentials
   const [formUser, setFormUser] = useState(savedUsername)
@@ -2290,7 +2456,9 @@ function SubscriberPage({
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "minmax(320px,480px) 1fr",
+          gridTemplateColumns: isMobile
+            ? "1fr"
+            : "minmax(320px,480px) 1fr",
           gap: 16,
           marginBottom: 22,
           alignItems: "start",
@@ -2362,6 +2530,8 @@ function SubscriberPage({
                     cursor: "pointer",
                     color: C.textLt,
                     padding: 4,
+                    minHeight: isMobile ? 44 : undefined,
+                    minWidth: isMobile ? 44 : undefined,
                     lineHeight: 0,
                   }}
                 >
@@ -2462,6 +2632,7 @@ function SubscriberPage({
                     padding: "8px 14px",
                     cursor: "pointer",
                     transition: "opacity .15s",
+                    minHeight: 44,
                   }}
                 >
                   Disconnect
@@ -2489,6 +2660,7 @@ function SubscriberPage({
                     gap: 6,
                     transition: "background .2s, border-color .2s",
                     minWidth: 130,
+                    minHeight: 44,
                   }}
                 >
                   {isConnecting ? (
@@ -2531,6 +2703,7 @@ function SubscriberPage({
                     alignItems: "center",
                     gap: 5,
                     transition: "color .15s, border-color .15s",
+                    minHeight: 44,
                   }}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.color = C.clay
@@ -2564,6 +2737,7 @@ function SubscriberPage({
                       display: "flex",
                       alignItems: "center",
                       gap: 5,
+                      minHeight: 44,
                     }}
                   >
                     {Icon.refresh} Reconnect
@@ -2944,6 +3118,10 @@ function Empty({ text }) {
 
 // ─── ROOT APP ─────────────────────────────────────────────────────────────────
 export default function App() {
+  const width = useWindowWidth()
+  const isMobile = width < 768
+  const isTablet = width < 1024
+  const isNarrow = width < 480
   const [page, setPage] = useState("dashboard")
   const [readings, setReadings] = useState([])
   const [readingsLoading, setReadingsLoading] = useState(true)
@@ -3261,14 +3439,23 @@ export default function App() {
   return (
     <>
       <style>{globalStyle}</style>
-      <div style={{ display: "flex", minHeight: "100vh", background: C.bg }}>
-        <Sidebar
-          activePage={page}
-          setActivePage={setPage}
-          isOnline={mqttOnline}
-          lastUpdated={lastUpdated}
-          hasCredentials={hasCredentials}
-        />
+      <div
+        style={{
+          display: "flex",
+          minHeight: "100vh",
+          background: C.bg,
+          overflowX: "hidden",
+        }}
+      >
+        {!isMobile && (
+          <Sidebar
+            activePage={page}
+            setActivePage={setPage}
+            isOnline={mqttOnline}
+            lastUpdated={lastUpdated}
+            hasCredentials={hasCredentials}
+          />
+        )}
 
         {/* Main content */}
         <div
@@ -3277,17 +3464,19 @@ export default function App() {
             display: "flex",
             flexDirection: "column",
             overflow: "hidden",
+            minWidth: 0,
           }}
         >
           {/* Top bar */}
           <div
             style={{
-              padding: "16px 32px",
+              padding: isMobile ? "12px 16px" : "16px 32px",
               borderBottom: `1px solid ${C.border}`,
               background: "#faf6ee",
               display: "flex",
               alignItems: "center",
               justifyContent: "space-between",
+              gap: 12,
             }}
           >
             <div
@@ -3319,9 +3508,10 @@ export default function App() {
                     background: "#fff8ec",
                     border: "1px solid #f0d090",
                     borderRadius: 6,
-                    padding: "3px 10px",
+                    padding: isMobile ? "6px 10px" : "3px 10px",
                     cursor: "pointer",
                     transition: "background .15s",
+                    minHeight: 44,
                   }}
                   onMouseEnter={(e) =>
                     (e.currentTarget.style.background = "#fff0d0")
@@ -3331,8 +3521,9 @@ export default function App() {
                   }
                   title="Go to Custom Subscriber to connect"
                 >
-                  ⚠ MQTT disconnected —{" "}
-                  {hasCredentials ? "reconnect?" : "set up credentials →"}
+                  {isMobile
+                    ? "⚠ MQTT offline"
+                    : `⚠ MQTT disconnected — ${hasCredentials ? "reconnect?" : "set up credentials →"}`}
                 </button>
               )}
               {mqttOnline && (
@@ -3355,6 +3546,7 @@ export default function App() {
                     padding: "6px 12px",
                     cursor: "pointer",
                     transition: "background .15s",
+                    minHeight: 44,
                   }}
                   onMouseEnter={(e) =>
                     (e.currentTarget.style.background = C.bg3)
@@ -3370,7 +3562,14 @@ export default function App() {
           </div>
 
           {/* Page content */}
-          <div style={{ flex: 1, padding: "32px", overflowY: "auto" }}>
+          <div
+            style={{
+              flex: 1,
+              padding: isMobile ? "20px 16px 88px" : "32px",
+              overflowY: "auto",
+              minWidth: 0,
+            }}
+          >
             {readingsError && page !== "analytics" && page !== "subscriber" && (
               <div
                 style={{
@@ -3389,10 +3588,17 @@ export default function App() {
               </div>
             )}
             {page === "dashboard" && (
-              <DashboardPage readings={readingsLoading ? null : readings} />
+              <DashboardPage
+                readings={readingsLoading ? null : readings}
+                isMobile={isMobile}
+                isTablet={isTablet}
+              />
             )}
             {page === "nodes" && (
-              <NodesPage readings={readingsLoading ? null : readings} />
+              <NodesPage
+                readings={readingsLoading ? null : readings}
+                isMobile={isMobile}
+              />
             )}
             {page === "readings" && (
               <ReadingsPage
@@ -3401,6 +3607,7 @@ export default function App() {
                 setLimit={setLimit}
                 locationFilter={locationFilter}
                 setLocationFilter={setLocationFilter}
+                isMobile={isMobile}
               />
             )}
             {page === "analytics" && (
@@ -3411,6 +3618,8 @@ export default function App() {
                 analyticsDays={analyticsDays}
                 setAnalyticsDays={setAnalyticsDays}
                 onRefresh={() => setAnalyticsReload((value) => value + 1)}
+                isMobile={isMobile}
+                isNarrow={isNarrow}
               />
             )}
             {page === "subscriber" && (
@@ -3425,11 +3634,19 @@ export default function App() {
                 messages={subscriberMessages}
                 error={subscriberError}
                 feeds={FEED_KEYS}
+                isMobile={isMobile}
               />
             )}
           </div>
         </div>
       </div>
+      {isMobile && (
+        <BottomNav
+          activePage={page}
+          setActivePage={setPage}
+          hasCredentials={hasCredentials}
+        />
+      )}
     </>
   )
 }
