@@ -1,11 +1,15 @@
-# SMART Frontend (Custom MQTT Subscriber)
+# SMART Frontend
 
-This frontend includes a custom MQTT subscriber that connects directly to Adafruit IO over WebSockets and renders the live feed in the UI.
+This frontend uses two live data paths:
+
+- Custom Subscriber: direct MQTT over secure WebSockets to Adafruit IO for live browser monitoring.
+- Analytics: direct Supabase REST queries against `sensor_logs` for long-term historical analysis.
 
 ## Requirements
 
 - Node.js 18+
 - Adafruit IO account with a feed (e.g., `smart_reading`)
+- Supabase project with a `sensor_logs` table containing `id`, `temperature`, `humidity`, and `created_at`
 
 ## Local Development
 
@@ -23,13 +27,27 @@ Open the app, go to **Custom Subscriber**, and enter:
 
 Click **Save Config** then **Connect**.
 
-## Optional Environment Variables
+## Environment Variables
 
-You can prefill the subscriber form by adding these at build time:
+Analytics requires these Vite variables in [frontend/.env.example](c:/Users/MARIEL%20A.%20GRAVIDEZ/Documents/IoT%20Projects/SMART/smart/frontend/.env.example):
+
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_ANON_KEY`
+- `VITE_SUPABASE_TABLE` (optional, defaults to `sensor_logs`)
+
+You can still prefill the subscriber form at build time with:
 
 - `VITE_AIO_USERNAME`
 - `VITE_AIO_KEY`
 - `VITE_AIO_FEED`
+
+## Analytics Coverage
+
+The Analytics page now includes:
+
+- Descriptive analytics: summary KPIs, comfort rate, volatility, and historical highlights
+- Diagnostic analytics: correlation analysis and earlier-vs-recent comparisons
+- Predictive analytics: next-bucket temperature and humidity forecast with risk notes
 
 ## GitHub Pages Deploy
 
