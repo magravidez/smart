@@ -156,6 +156,12 @@ function parseFeedKey(feedKey) {
   }
 }
 
+function humanizeNodeId(nodeId) {
+  if (!nodeId) return "Unknown"
+  const parts = nodeId.toString().split("-")
+  return toTitleCase(parts.slice(2).join(" ") || nodeId.replace(/[-_]/g, " "))
+}
+
 function mean(values) {
   return values.length
     ? values.reduce((sum, value) => sum + value, 0) / values.length
@@ -239,10 +245,49 @@ function normalizeHistoricalLog(row, index) {
     row.created_at || row.timestamp || row.inserted_at || row.logged_at
   return {
     id: row.id ?? `${timestamp || "row"}-${index}`,
+    node_id: row.node_id || row.nodeId || `HIST_${index + 1}`,
+    location: row.location || humanizeNodeId(row.node_id || row.nodeId),
     temperature: Number(row.temperature),
     humidity: Number(row.humidity),
     timestamp,
   }
+}
+
+async function fetchSupabaseReadings(maxRows = 500) {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+    throw new Error(
+      "Missing Supabase configuration. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in frontend/.env."
+    )
+  }
+
+  const url = new URL(`${SUPABASE_URL}/rest/v1/${SUPABASE_TABLE}`)
+  url.searchParams.set("select", "id,node_id,temperature,humidity,created_at")
+  url.searchParams.set("order", "created_at.desc")
+  url.searchParams.set("limit", `${maxRows}`)
+
+  const response = await fetch(url, {
+    headers: {
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+    },
+  })
+
+  if (!response.ok) {
+    const details = await response.text()
+    throw new Error(
+      details || `Supabase readings request failed with ${response.status}.`
+    )
+  }
+
+  const rows = await response.json()
+  return rows
+    .map(normalizeHistoricalLog)
+    .filter(
+      (row) =>
+        row.timestamp &&
+        Number.isFinite(row.temperature) &&
+        Number.isFinite(row.humidity)
+    )
 }
 
 async function fetchSupabaseLogs(days) {
@@ -256,7 +301,7 @@ async function fetchSupabaseLogs(days) {
     Date.now() - days * 24 * 60 * 60 * 1000
   ).toISOString()
   const url = new URL(`${SUPABASE_URL}/rest/v1/${SUPABASE_TABLE}`)
-  url.searchParams.set("select", "id,temperature,humidity,created_at")
+  url.searchParams.set("select", "id,node_id,temperature,humidity,created_at")
   url.searchParams.set("created_at", `gte.${cutoffIso}`)
   url.searchParams.set("order", "created_at.asc")
   url.searchParams.set(
@@ -2901,6 +2946,9 @@ function Empty({ text }) {
 export default function App() {
   const [page, setPage] = useState("dashboard")
   const [readings, setReadings] = useState([])
+  const [readingsLoading, setReadingsLoading] = useState(true)
+  const [readingsError, setReadingsError] = useState("")
+  const [readingsReload, setReadingsReload] = useState(0)
   const [locationFilter, setLocationFilter] = useState("All Locations")
   const [analytics, setAnalytics] = useState(null)
   const [analyticsDays, setAnalyticsDays] = useState(7)
@@ -3125,6 +3173,40 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // ── Historical readings ───────────────────────────────────────────────────
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadHistoricalReadings() {
+      setReadingsLoading(true)
+      setReadingsError("")
+
+      try {
+        const logs = await fetchSupabaseReadings(Math.max(500, limit * 4))
+        if (cancelled) return
+        setReadings(logs)
+        if (logs[0]?.timestamp) {
+          setLastUpdated(fmtTimeShort(logs[0].timestamp))
+        }
+      } catch (error) {
+        if (cancelled) return
+        setReadings([])
+        setReadingsError(
+          error instanceof Error
+            ? error.message
+            : "Could not load Supabase readings."
+        )
+      } finally {
+        if (!cancelled) setReadingsLoading(false)
+      }
+    }
+
+    loadHistoricalReadings()
+    return () => {
+      cancelled = true
+    }
+  }, [limit, readingsReload])
+
   // ── Analytics ─────────────────────────────────────────────────────────────
   useEffect(() => {
     let cancelled = false
@@ -3255,7 +3337,11 @@ export default function App() {
               )}
               {mqttOnline && (
                 <button
-                  onClick={() => connectSubscriber(activeUsername, activeKey)}
+                  onClick={() => {
+                    setReadingsReload((value) => value + 1)
+                    setAnalyticsReload((value) => value + 1)
+                    connectSubscriber(activeUsername, activeKey)
+                  }}
                   style={{
                     display: "flex",
                     alignItems: "center",
@@ -3285,11 +3371,32 @@ export default function App() {
 
           {/* Page content */}
           <div style={{ flex: 1, padding: "32px", overflowY: "auto" }}>
-            {page === "dashboard" && <DashboardPage readings={readings} />}
-            {page === "nodes" && <NodesPage readings={readings} />}
+            {readingsError && page !== "analytics" && page !== "subscriber" && (
+              <div
+                style={{
+                  marginBottom: 16,
+                  fontFamily: FONT_MONO,
+                  fontSize: 11,
+                  color: C.clay,
+                  background: "#fae8e8",
+                  border: "1px solid #f0c0c0",
+                  borderRadius: 8,
+                  padding: "8px 10px",
+                  width: "fit-content",
+                }}
+              >
+                {readingsError}
+              </div>
+            )}
+            {page === "dashboard" && (
+              <DashboardPage readings={readingsLoading ? null : readings} />
+            )}
+            {page === "nodes" && (
+              <NodesPage readings={readingsLoading ? null : readings} />
+            )}
             {page === "readings" && (
               <ReadingsPage
-                readings={readingsLimited}
+                readings={readingsLoading ? null : readingsLimited}
                 limit={limit}
                 setLimit={setLimit}
                 locationFilter={locationFilter}
