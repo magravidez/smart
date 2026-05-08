@@ -16,6 +16,8 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -34,8 +36,12 @@ jobs:
         run: npm run build --prefix frontend
         env:
           VITE_BASE: "/smart/"
-          VITE_AIO_USERNAME: ${{ secrets.VITE_AIO_USERNAME }}
-          VITE_AIO_KEY: ${{ secrets.VITE_AIO_KEY }}
+          VITE_AIO_USERNAME: ${{ vars.VITE_AIO_USERNAME || secrets.VITE_AIO_USERNAME }}
+          VITE_AIO_KEY: ${{ vars.VITE_AIO_KEY || secrets.VITE_AIO_KEY }}
+          VITE_AIO_FEED: ${{ vars.VITE_AIO_FEED || secrets.VITE_AIO_FEED }}
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL || secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY || secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_SUPABASE_TABLE: ${{ vars.VITE_SUPABASE_TABLE || secrets.VITE_SUPABASE_TABLE }}
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
